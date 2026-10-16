@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Builds the pitch deck: docs/slides/out/ixia-guardrails.pdf + one PNG per slide (1920x1080).
+Numbers on the eval slide come from eval/results/latest.json (the newest full run).
+Usage: python3 docs/slides/build.py"""
+import json, pathlib, html
+from playwright.sync_api import sync_playwright
+
+HERE = pathlib.Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+OUT = HERE / 'out'
+OUT.mkdir(exist_ok=True)
+S = json.loads((ROOT / 'eval/results/latest.json').read_text()) if (ROOT / 'eval/results/latest.json').exists() \
+    else json.loads((ROOT / 'playground/public/eval.json').read_text())
+mh, ms, ei = S['must_hold'], S['must_send'], S['either']
+p50 = S['latency_ms']['p50'] / 1000
+
+CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap');
+:root{--bg:#e8ebef;--surface:#fbfcfd;--ink:#0c0f16;--muted:#4a5262;--subtle:#5f6778;--accent:#2348ff;--go:#0f8a53;--hold:#94560a;--block:#b8303a;--line:rgba(12,15,22,.14)}
+*{box-sizing:border-box;margin:0}
+body{background:#555}
+.slide{width:1920px;height:1080px;position:relative;overflow:hidden;background:var(--bg);color:var(--ink);font:28px/1.45 Archivo,sans-serif;
+ background-image:linear-gradient(rgba(12,15,22,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(12,15,22,.05) 1px,transparent 1px);background-size:64px 64px;
+ padding:96px 128px;page-break-after:always;display:flex;flex-direction:column}
+h1,h2{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;letter-spacing:-.03em;line-height:1.0}
+h1{font-size:132px} h2{font-size:76px;margin-bottom:44px;max-width:1500px}
+.k{font:500 22px 'JetBrains Mono',monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:28px}
+.mark{width:56px;height:56px;border-radius:9px;background:#0c0f16;position:relative;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:18px}
+.mark:before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent 46%,var(--accent) 46% 54%,transparent 54%)}
+.foot{position:absolute;left:128px;right:128px;bottom:56px;display:flex;justify-content:space-between;font:500 20px 'JetBrains Mono',monospace;color:var(--subtle)}
+.lede{font-size:36px;color:var(--muted);max-width:1300px}
+.acc{color:var(--accent)}
+.rows{border-top:2px solid var(--ink)}
+.rows>div{display:grid;grid-template-columns:var(--cols,90px 1fr);gap:36px;padding:24px 0;border-bottom:1px solid var(--line);align-items:baseline}
+.rows b{font-family:'Bricolage Grotesque';font-weight:800;font-size:36px;letter-spacing:-.01em}
+.rows .n{font:500 24px 'JetBrains Mono';color:var(--accent)}
+.rows .m{font:500 22px 'JetBrains Mono';color:var(--muted)}
+.rows p{color:var(--muted)}
+.lamp{display:inline-block;width:30px;height:30px;border-radius:50%;vertical-align:-5px;margin-right:14px}
+.go{background:var(--go)}.hold{background:var(--hold)}.block{background:var(--block)}
+.lanes{display:grid;grid-template-columns:1fr 1fr;gap:0;border:2px solid var(--ink);border-radius:14px;overflow:hidden;background:var(--surface)}
+.lanes>div{padding:34px 40px}.lanes>div+div{border-left:1px solid var(--line)}
+.lanes pre{white-space:pre-wrap;font:26px/1.5 Archivo}
+.big{font-family:'Bricolage Grotesque';font-weight:800;font-size:150px;letter-spacing:-.04em;line-height:.9}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:48px}
+.grid3>div{border-top:2px solid var(--ink);padding-top:24px}
+.grid3 .lbl{font:500 22px 'JetBrains Mono';text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-top:16px}
+.shot{position:absolute;right:96px;top:170px;width:1060px;height:800px;object-fit:cover;object-position:top;border-radius:14px;box-shadow:0 30px 80px rgba(12,15,22,.22);border:1px solid var(--line)}
+"""
+
+def foot(i):
+    return f'<div class="foot"><span>IXIA Guardrails · TechEx Amsterdam Hackathon 2026</span><span>{i:02d}</span></div>'
+
+slides = []
+slides.append(f"""<section class="slide" style="justify-content:center">
+<div class="k">TechEx Amsterdam Hackathon 2026 · Enterprise AI · Ethical AI</div>
+<h1><span class="mark"></span>IXIA Guardrails</h1>
+<p class="lede" style="margin-top:40px;font-size:44px;max-width:1400px">Every client enquiry answered in seconds.<br><span class="acc">The risky ones wait for a lawyer.</span></p>
+<p class="lede" style="margin-top:56px;font-size:28px">Live demo ixia-guardrails.pages.dev · Code github.com/ctmakc/ixia-guardrails · INNOVA, Ottawa</p>{foot(1)}</section>""")
+
+slides.append(f"""<section class="slide"><div class="k">The problem</div>
+<h2>The first reply wins the client. In a law firm, an AI first reply can also cause harm.</h2>
+<div class="rows" style="--cols:60px 1fr">
+<div><span class="n">01</span><div><b>Advice on the person's own case</b><p>"Yes, you can sue" from a model that has read one paragraph.</p></div></div>
+<div><span class="n">02</span><div><b>Promised outcomes</b><p>"Your permit will be approved." No lawyer may write that.</p></div></div>
+<div><span class="n">03</span><div><b>Invented facts</b><p>A free consultation the firm never offered, a phone number nobody answers.</p></div></div>
+<div><span class="n">04</span><div><b>Sensitive data echoed by e-mail</b><p>A diagnosis, an arrest or an asylum refusal repeated back in an automated message.</p></div></div>
+</div>{foot(2)}</section>""")
+
+slides.append(f"""<section class="slide"><div class="k">The solution</div>
+<h2>A gate between the AI draft and the client.</h2>
+<div class="rows" style="--cols:420px 1fr">
+<div><b>1 · Inbound rules</b><p>Prompt injection and sensitive personal data in six languages, plus the draft model's own flags.</p></div>
+<div><b>2 · Grounded draft</b><p>Retrieves the firm's knowledge base, drafts in the client's language, cites what it used.</p></div>
+<div><b>3 · Two independent checks</b><p>Llama Guard 3 on the reply, and a verifier from another model family that lists every unsupported claim.</p></div>
+<div><b>4 · Deterministic rules</b><p>Prices must be in the knowledge base, contacts must be the firm's own, language must match.</p></div>
+</div>
+<p class="lede" style="margin-top:36px"><span class="lamp go"></span>send &nbsp;&nbsp; <span class="lamp hold"></span>hold for a human &nbsp;&nbsp; <span class="lamp block"></span>block — and a hash-chained audit record for every decision.</p>{foot(3)}</section>""")
+
+slides.append(f"""<section class="slide"><div class="k">Application of technology · all on Cloudflare Workers AI</div>
+<h2>Four models, each with one job.</h2>
+<div class="rows" style="--cols:560px 1fr">
+<div><span class="m">@cf/baai/bge-m3</span><p>Multilingual retrieval: a Dutch question finds the English fee entry.</p></div>
+<div><span class="m">@cf/meta/llama-3.3-70b-instruct-fp8-fast</span><p>Grounded draft as JSON: reply, language, urgency, citations, sensitive-data flags.</p></div>
+<div><span class="m">@cf/meta/llama-guard-3-8b</span><p>Safety taxonomy on the (enquiry, reply) pair. S6 specialised advice and S7 privacy hold; other hazards block.</p></div>
+<div><span class="m">@cf/openai/gpt-oss-120b</span><p>Independent verifier, low reasoning effort: unsupported claims, case advice, promised outcomes, echoed details.</p></div>
+</div>
+<p class="lede" style="margin-top:36px">Checks run in parallel. Median {p50:.1f} s per enquiry end to end in the eval run. The same TypeScript core runs in a Pages Function, in IXIA's Node server and in the eval runner.</p>{foot(4)}</section>""")
+
+slides.append(f"""<section class="slide"><div class="k">What the client receives</div>
+<h2>Held does not mean silent.</h2>
+<div class="lanes"><div><div class="k" style="color:var(--go)">Sent to the client now</div><pre>Beste Lisa,
+
+Dank u voor uw bericht aan Demo Law Amsterdam. We hebben uw aanvraag ontvangen en een medewerker neemt binnen 30 minuten tijdens kantooruren persoonlijk contact met u op.
+
+Dit eerste antwoord is geschreven door een AI-assistent namens Demo Law Amsterdam.</pre></div>
+<div><div class="k" style="color:var(--hold)">Held for a human</div><pre>Enquiry mentions a burn-out during a dismissal
+(health data, GDPR Art. 9).
+
+The AI draft waits in the review queue with its citations and the reasons it was held. The acknowledgement repeats none of the client's details.</pre></div></div>
+<p class="lede" style="margin-top:32px">Safe acknowledgements in English, Dutch, German, French, Spanish and Ukrainian. Every AI-written message says it was written by AI.</p>{foot(5)}</section>""")
+
+slides.append(f"""<section class="slide"><div class="k">Inside the product</div>
+<h2 style="max-width:620px">Built into IXIA, the intake platform we already run.</h2>
+<div class="rows" style="--cols:1fr;max-width:600px">
+<div><p><b>Review queue.</b> Approve the draft, send an edit, or reject it. SLA timer keeps running.</p></div>
+<div><p><b>Knowledge base</b> in Settings: what the AI may tell a new client.</p></div>
+<div><p><b>Audit chain.</b> Every triage and every reviewer action, SHA-256 linked.</p></div>
+<div><p><b>Monitor.</b> Held leads past the SLA count as leaking.</p></div>
+</div>
+<img class="shot" src="ixia-review.png">{foot(6)}</section>""")
+
+slides.append(f"""<section class="slide"><div class="k">Measured · {S['cases']} hand-written enquiries · 6 languages · live models</div>
+<h2>No automatic reply to a sensitive enquiry.</h2>
+<div class="grid3">
+<div><div class="big">{mh['auto_sent'] and len(mh['auto_sent']) or 0}<span style="font-size:60px;color:var(--muted)"> / {mh['n']}</span></div><div class="lbl">sensitive or hostile enquiries auto-replied<br>(without the gate: {mh['n']} / {mh['n']})</div></div>
+<div><div class="big">{ms['auto_sent']}<span style="font-size:60px;color:var(--muted)"> / {ms['n']}</span></div><div class="lbl">plain FAQs answered instantly<br>from the knowledge base</div></div>
+<div><div class="big">{p50:.1f}<span style="font-size:60px;color:var(--muted)"> s</span></div><div class="lbl">median per enquiry, p95 {S['latency_ms']['p95']/1000:.1f} s</div></div>
+</div>
+<p class="lede" style="margin-top:56px;font-size:28px">Sensitive set: health, arrest, detention, asylum, children, violence, self-harm, religion, trade union, three injection attempts. {ei['n']} more advice-seeking or bait questions: {len(ei['auto_sent'])} sent, {len(ei['held'])} held. Run {html.escape(S['stamp'])} UTC, prompt {html.escape(S['promptVersion'])}. Cases written by the team; a regression test, not a benchmark.</p>{foot(7)}</section>""")
+
+slides.append(f"""<section class="slide"><div class="k">Business value</div>
+<h2>Speed for the firm, control for the partner who signs.</h2>
+<div class="rows" style="--cols:380px 1fr">
+<div><b>Who pays</b><p>Law firms, immigration consultants, clinics: businesses where a reply is regulated and a lost enquiry is lost revenue.</p></div>
+<div><b>How</b><p>Part of the IXIA subscription (today Starter $99 / Pro $299 per month). About 70 Workers AI neurons per enquiry: under $0.001 at list price.</p></div>
+<div><b>Alternatives</b><p>Generic chatbots answer fast with no grounding. Answering services and intake staff are careful but slow after hours. Contact forms leave the client waiting.</p></div>
+<div><b>Why us</b><p>Instant reply, human control on sensitive cases, multilingual by default, and an audit trail a compliance officer can verify.</p></div>
+</div>{foot(8)}</section>""")
+
+slides.append(f"""<section class="slide" style="justify-content:center"><div class="k">Next</div>
+<h2>Next: per-firm policy packs, and the same gate on phone and chat channels.</h2>
+<div class="rows" style="--cols:300px 1fr;max-width:1400px">
+<div><span class="m">Demo</span><b>ixia-guardrails.pages.dev</b></div>
+<div><span class="m">Code</span><b>github.com/ctmakc/ixia-guardrails</b></div>
+<div><span class="m">Product</span><b>ixia.online</b></div>
+</div>
+<p class="lede" style="margin-top:44px">Built 16–19 October 2026 by Maksym Stepanenko · INNOVA CONSULT LTD, Ottawa</p>{foot(9)}</section>""")
+
+page = f"<!doctype html><html><head><meta charset='utf-8'><style>{CSS}</style></head><body>{''.join(slides)}</body></html>"
+(HERE / 'slides.html').write_text(page)
+with sync_playwright() as p:
+    b = p.chromium.launch()
+    pg = b.new_page(viewport={'width': 1920, 'height': 1080})
+    pg.goto((HERE / 'slides.html').as_uri()); pg.wait_for_timeout(2500)
+    pg.pdf(path=str(OUT / 'ixia-guardrails.pdf'), width='1920px', height='1080px', print_background=True, margin={'top': '0', 'right': '0', 'bottom': '0', 'left': '0'})
+    for i, el in enumerate(pg.query_selector_all('.slide'), 1):
+        el.screenshot(path=str(OUT / f'slide-{i:02d}.png'))
+    b.close()
+print('slides:', len(slides), '→', OUT)

@@ -4,3 +4,4 @@ node_modules/
 *.log
 eval/results/raw-*.json
 eval/results/partial-*.json
+docs/slides/out/
