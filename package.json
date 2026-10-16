@@ -1,0 +1,22 @@
+{
+  "name": "ixia-guardrails",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Governed AI first-response for regulated service firms: grounded drafts, Llama Guard + verifier checks, human review queue, hash-chained audit. Runs on Cloudflare Workers AI.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test packages/guard/test/*.test.ts",
+    "smoke": "tsx eval/smoke.ts",
+    "eval": "tsx eval/run.ts",
+    "dev": "cd playground && wrangler pages dev public --ai AI",
+    "deploy": "cd playground && wrangler pages deploy public --project-name ixia-guardrails"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20251014.0",
+    "@types/node": "^22.10.7",
+    "tsx": "4.20.6",
+    "typescript": "5.7.3"
+  }
+}
