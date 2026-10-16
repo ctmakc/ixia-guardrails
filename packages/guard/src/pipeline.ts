@@ -154,7 +154,7 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
   const first = (e.name || '').trim().split(/\s+/)[0];
   const disclosure = fill(AI_DISCLOSURE[lang], { firm: ws.name });
   const outgoing = decision === 'auto_send'
-    ? `${reply.trim()}\n\n${disclosure}`
+    ? `${reply.trim()}${reply.includes(ws.name) ? '' : `\n\n— ${ws.name}`}\n\n${disclosure}`
     : `${fill(SAFE_ACK[lang], {
       greeting: first ? fill(GREETING_NAMED[lang], { first }) : GREETING_ANON[lang],
       firm: ws.name, sla: ws.slaMinutes,
