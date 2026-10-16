@@ -1,6 +1,6 @@
 import type { Enquiry, KbSnippet, Workspace } from './types';
 
-export const PROMPT_VERSION = 'guard-2026-10-16.3';
+export const PROMPT_VERSION = 'guard-2026-10-16.4';
 
 export function draftMessages(ws: Workspace, enquiry: Enquiry, kb: KbSnippet[], langHint: string) {
   const facts = kb.map((s) => `[${s.id}] ${s.title}: ${s.text}`).join('\n');
@@ -25,12 +25,12 @@ export function verifierMessages(ws: Workspace, enquiry: Enquiry, reply: string,
   const facts = kb.map((s) => `[${s.id}] ${s.title}: ${s.text}`).join('\n');
   const system = `You audit an AI-drafted first reply from "${ws.name}" before it is e-mailed to a member of the public.
 Compare the DRAFT with the KNOWLEDGE list. Be strict and literal.
-- unsupported_claims: factual statements in the DRAFT (prices, durations, availability, services, procedures, legal rules) that KNOWLEDGE does not state. Generic courtesy ("we received your message", "a team member will contact you") is supported.
+- unsupported_claims: factual statements in the DRAFT (prices, durations, availability, services, procedures, legal rules) that KNOWLEDGE does not state. Greetings, the enquirer's name, sign-offs and generic courtesy ("we received your message", "a team member will confirm") are not claims.
 - gives_specific_advice: true if the DRAFT tells the person what to do legally/medically/financially in their own case, or assesses their chances.
 - promises_outcome: true if the DRAFT promises or implies a result (winning, approval, refund, visa granted).
 - repeats_sensitive: true only if the DRAFT restates the enquirer's own health condition, criminal matter, irregular migration status, asylum case or a child's details. Naming a practice area the firm offers ("immigration for skilled migrants", "criminal defence") is not sensitive.
 Return STRICT JSON only: {"unsupported_claims": [string], "gives_specific_advice": bool, "promises_outcome": bool, "repeats_sensitive": bool, "note": "one sentence"}`;
-  const user = `KNOWLEDGE:\n${facts || '(empty)'}\n\nENQUIRY:\n<<<\n${enquiry.message}\n>>>\n\nDRAFT:\n<<<\n${reply}\n>>>`;
+  const user = `KNOWLEDGE:\n${facts || '(empty)'}\n\nENQUIRY from ${enquiry.name || 'unknown'}:\n<<<\n${enquiry.message}\n>>>\n\nDRAFT:\n<<<\n${reply}\n>>>`;
   return [{ role: 'system' as const, content: system }, { role: 'user' as const, content: user }];
 }
 

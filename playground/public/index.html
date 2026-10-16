@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IXIA Guardrails — instant replies, human review for the risky ones</title>
+<meta name="description" content="IXIA Guardrails checks every AI-drafted reply to a new client enquiry against the firm's own knowledge, Llama Guard 3 and an independent verifier. Safe drafts go out in seconds; sensitive ones wait for a human.">
+<meta property="og:title" content="IXIA Guardrails">
+<meta property="og:description" content="Instant AI replies for law-firm and clinic enquiries, with a human on the risky ones. Runs on Cloudflare Workers AI.">
+<meta property="og:image" content="/og.png">
+<meta name="theme-color" content="#e8ebef">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%230c0f16'/%3E%3Cpath d='M12 32 L20 0 L24 0 L16 32Z' fill='%232348ff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body class="no-js">
+<script>document.body.classList.remove('no-js')</script>
+
+<header class="appbar">
+  <div class="wrap appbar-row">
+    <a class="brand" href="/" aria-label="IXIA Guardrails home"><span class="brand-mark" aria-hidden="true"></span>IXIA <span class="brand-sub">Guardrails</span></a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#queue">Review queue</a>
+      <a href="#how">How it works</a>
+      <a href="#eval">Eval</a>
+      <a href="https://github.com/ctmakc/ixia-guardrails" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap" aria-labelledby="h1">
+    <div class="hero-copy">
+      <p class="kicker">Live on Cloudflare Workers AI · TechEx Amsterdam 2026</p>
+      <h1 id="h1"><span class="line"><span>Every enquiry answered</span></span><span class="line"><span>in seconds.</span></span><span class="line"><span class="accent-ink">The risky ones</span></span><span class="line"><span class="accent-ink">wait for a lawyer.</span></span></h1>
+      <p class="lede">IXIA writes the first reply to new clients of law firms and clinics. Guardrails checks each draft against the firm's own knowledge base, Llama Guard 3 and an independent verifier model. Safe drafts are sent at once. Sensitive ones go to a review queue, and the client gets an instant acknowledgement in their own language.</p>
+
+      <form id="intake" class="intake" autocomplete="off">
+        <div class="intake-head">
+          <span class="mono-label">Write as a client of</span>
+          <b>Demo Law Amsterdam</b><span class="tag">fictional firm</span>
+        </div>
+        <div class="samples" role="group" aria-label="Sample enquiries"></div>
+        <label for="name">Your name</label>
+        <input id="name" name="name" maxlength="80" placeholder="Lisa Jansen">
+        <label for="message">Message</label>
+        <textarea id="message" name="message" rows="5" maxlength="2000" required placeholder="Ask about fees, a dismissal, a permit, a divorce… in any of six languages."></textarea>
+        <div class="intake-foot">
+          <button class="btn btn-primary" type="submit" id="run"><span>Run the gate</span></button>
+          <span class="budget mono" id="budget" aria-live="polite"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="gate" id="gate" aria-live="polite">
+      <div class="gate-head">
+        <span class="mono-label">The gate</span>
+        <span class="gate-clock mono" id="clock">idle</span>
+      </div>
+      <ol class="rail" id="rail"></ol>
+      <div class="decision" id="decision" hidden>
+        <span class="decision-word" id="decision-word"></span>
+        <span class="decision-why" id="decision-why"></span>
+      </div>
+      <div class="lanes" id="lanes" hidden>
+        <article class="lane lane-sent">
+          <h3 class="mono-label">Sent to the client now</h3>
+          <pre class="letter" id="outgoing"></pre>
+        </article>
+        <article class="lane lane-held">
+          <h3 class="mono-label">Held for a human</h3>
+          <div id="held"></div>
+        </article>
+      </div>
+      <div class="kb" id="kb" hidden>
+        <span class="mono-label">Knowledge retrieved (bge-m3)</span>
+        <ul id="kb-list"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="band wrap" id="queue" aria-labelledby="q-h">
+    <div class="band-head">
+      <h2 id="q-h">Review queue and audit chain</h2>
+      <p>Held drafts from this browser. Approve, edit or reject them the way a firm's intake lawyer would. Every decision is a record whose SHA-256 hash covers the previous one, so changing any past entry breaks verification.</p>
+    </div>
+    <div class="queue-grid">
+      <div>
+        <h3 class="mono-label">Waiting <span id="q-count">0</span></h3>
+        <ul class="rows" id="queue-list"><li class="empty">Nothing waiting. Try the burn-out or asylum sample above.</li></ul>
+      </div>
+      <div>
+        <h3 class="mono-label">Audit chain <span id="a-count">0</span></h3>
+        <ol class="rows chain" id="chain"><li class="empty">No records yet.</li></ol>
+        <div class="chain-actions">
+          <button class="btn btn-ghost" id="verify" type="button">Verify chain</button>
+          <button class="btn btn-ghost" id="tamper" type="button">Tamper with record 1</button>
+          <button class="btn btn-link" id="reset" type="button">Clear</button>
+        </div>
+        <p class="verify-out mono" id="verify-out" aria-live="polite"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band wrap" id="how" aria-labelledby="how-h">
+    <div class="band-head">
+      <h2 id="how-h">How the gate decides</h2>
+      <p>Five stages, three models, one deterministic rule set. Any <b class="st-block">block</b> stops the draft; any <b class="st-review">review</b> holds it; otherwise it is sent.</p>
+    </div>
+    <ol class="rows how">
+      <li><span class="n mono">01</span><div><b>Inbound rules</b><p>Prompt-injection markers and sensitive personal data (health, criminal matters, migration status, children, violence or self-harm, religion, trade union) in six languages. The draft model flags the same categories as a second opinion.</p></div><span class="model mono">regex + draft model</span></li>
+      <li><span class="n mono">02</span><div><b>Retrieve</b><p>Multilingual embeddings pick the four most relevant entries of the firm's knowledge base. A Dutch question finds the English fee entry.</p></div><span class="model mono">@cf/baai/bge-m3</span></li>
+      <li><span class="n mono">03</span><div><b>Draft</b><p>A grounded first reply in the client's language, with citations to the knowledge entries it used.</p></div><span class="model mono">@cf/meta/llama-3.3-70b-instruct-fp8-fast</span></li>
+      <li><span class="n mono">04</span><div><b>Safety and verification, in parallel</b><p>Llama Guard 3 classifies the reply (S6 specialised advice and S7 privacy hold it; other hazards block it). A second model from another family lists every claim the knowledge base does not support, case-specific advice, promised outcomes and echoed sensitive details.</p></div><span class="model mono">@cf/meta/llama-guard-3-8b · @cf/openai/gpt-oss-120b</span></li>
+      <li><span class="n mono">05</span><div><b>Deterministic outbound rules</b><p>Every price or percentage must appear in the retrieved knowledge. Phone numbers, e-mails and links must be the firm's own. Citations must exist. The reply must be in the client's language. An AI-disclosure line is always appended.</p></div><span class="model mono">rules</span></li>
+    </ol>
+  </section>
+
+  <section class="band wrap" id="eval" aria-labelledby="eval-h">
+    <div class="band-head">
+      <h2 id="eval-h">Measured, on 40 hand-written enquiries</h2>
+      <p id="eval-lede">Loading the latest run…</p>
+    </div>
+    <table class="rows evaltable" id="evaltable">
+      <thead><tr><th scope="col">Group</th><th scope="col">Cases</th><th scope="col">Sent at once</th><th scope="col">Held or blocked</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="fine">The cases were written by the team: 14 plain FAQs that must be answered at once, 18 sensitive or hostile enquiries that must never get an automatic answer, 8 advice-seeking or bait questions where either outcome is acceptable. They are a regression test, not a benchmark. Full per-case output is in the repository under <code>eval/results</code>.</p>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-row">
+    <p>IXIA is an AI lead-intake platform by INNOVA, Ottawa. Guardrails was built during the TechEx Amsterdam Hackathon, 16–19 October 2026. Demo Law Amsterdam is fictional; do not send real personal data.</p>
+    <a class="mmix" href="https://mmix.ua/" rel="noopener">Development &amp; promotion — <img src="/mmix-logo.png" alt="MMIX — Marketing Mix" width="37" height="36"></a>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="/app.js" type="module"></script>
+</body>
+</html>

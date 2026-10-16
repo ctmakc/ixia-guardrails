@@ -48,12 +48,12 @@ export const AI_DISCLOSURE: Record<Lang, string> = {
 // Safe acknowledgement: sent instantly when the draft is held. It confirms
 // receipt and the SLA, gives no advice, repeats none of the enquirer's details.
 export const SAFE_ACK: Record<Lang, string> = {
-  en: '{greeting} Thank you for contacting {firm}. We have received your message and a member of our team will reply personally within {sla} minutes during business hours.',
-  nl: '{greeting} Dank u voor uw bericht aan {firm}. We hebben uw aanvraag ontvangen en een medewerker neemt binnen {sla} minuten tijdens kantooruren persoonlijk contact met u op.',
-  de: '{greeting} Vielen Dank für Ihre Nachricht an {firm}. Wir haben Ihre Anfrage erhalten; ein Mitglied unseres Teams antwortet Ihnen persönlich innerhalb von {sla} Minuten während der Geschäftszeiten.',
-  fr: '{greeting} Merci d’avoir contacté {firm}. Nous avons bien reçu votre message et un membre de notre équipe vous répondra personnellement sous {sla} minutes pendant les heures ouvrables.',
-  es: '{greeting} Gracias por contactar con {firm}. Hemos recibido su mensaje y un miembro de nuestro equipo le responderá personalmente en un plazo de {sla} minutos en horario laboral.',
-  uk: '{greeting} Дякуємо, що звернулися до {firm}. Ми отримали ваше повідомлення, і працівник нашої команди особисто відповість вам протягом {sla} хвилин у робочий час.',
+  en: '{greeting}\n\nThank you for contacting {firm}. We have received your message and a member of our team will reply personally within {sla} minutes during business hours.',
+  nl: '{greeting}\n\nDank u voor uw bericht aan {firm}. We hebben uw aanvraag ontvangen en een medewerker neemt binnen {sla} minuten tijdens kantooruren persoonlijk contact met u op.',
+  de: '{greeting}\n\nVielen Dank für Ihre Nachricht an {firm}. Wir haben Ihre Anfrage erhalten; ein Mitglied unseres Teams antwortet Ihnen persönlich innerhalb von {sla} Minuten während der Geschäftszeiten.',
+  fr: '{greeting}\n\nMerci d’avoir contacté {firm}. Nous avons bien reçu votre message et un membre de notre équipe vous répondra personnellement sous {sla} minutes pendant les heures ouvrables.',
+  es: '{greeting}\n\nGracias por contactar con {firm}. Hemos recibido su mensaje y un miembro de nuestro equipo le responderá personalmente en un plazo de {sla} minutos en horario laboral.',
+  uk: '{greeting}\n\nДякуємо, що звернулися до {firm}. Ми отримали ваше повідомлення, і працівник нашої команди особисто відповість вам протягом {sla} хвилин у робочий час.',
 };
 
 export const GREETING_NAMED: Record<Lang, string> = {
