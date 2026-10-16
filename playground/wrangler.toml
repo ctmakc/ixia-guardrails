@@ -12,5 +12,5 @@ id = "58cfea41e58f471ea85d2811ad664717"
 [vars]
 # Live model runs per UTC day across all visitors. Workers AI gives 10,000
 # free neurons a day; one triage costs roughly 60-90 neurons.
-DAILY_LIVE_RUNS = "120"
+DAILY_LIVE_RUNS = "80"
 PER_IP_PER_DAY = "25"
