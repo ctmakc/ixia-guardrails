@@ -1,9 +1,9 @@
 /* IXIA Guardrails — tokens inherited from the IXIA app (src/app/globals.css) */
 :root {
   --bg: #e8ebef; --bg-alt: #dfe3e9; --surface: #fbfcfd; --surface-2: #f3f5f8;
-  --ink: #0c0f16; --muted: #4f5767; --subtle: #7d8595;
+  --ink: #0c0f16; --muted: #4a5262; --subtle: #5f6778;
   --accent: #2348ff; --accent-dim: #1733c2; --accent-soft: #e3e8ff;
-  --go: #0f8a53; --go-soft: #d8f3e3; --hold: #b86e06; --hold-soft: #fdecd2; --block: #d63f44; --block-soft: #fde4e4;
+  --go: #0f8a53; --go-soft: #d8f3e3; --hold: #94560a; --hold-soft: #fdecd2; --block: #b8303a; --block-soft: #fde4e4;
   --grid: rgba(12,15,22,.05); --line: rgba(12,15,22,.12); --line-strong: rgba(12,15,22,.24);
   --r-sm: 5px; --r: 8px; --r-lg: 12px;
   --sh: 0 10px 30px rgba(12,15,22,.08), 0 2px 6px rgba(12,15,22,.05);
