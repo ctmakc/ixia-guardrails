@@ -1,0 +1,410 @@
+diff --git a/src/app/(app)/Nav.tsx b/src/app/(app)/Nav.tsx
+index 9cbd64a..ac86bb3 100644
+--- a/src/app/(app)/Nav.tsx
++++ b/src/app/(app)/Nav.tsx
+@@ -6,10 +6,11 @@ import { usePathname } from 'next/navigation';
+ const LINKS = [
+   { href: '/dashboard', label: 'Monitor' },
+   { href: '/leads', label: 'Leads' },
++  { href: '/review', label: 'Review' },
+   { href: '/settings', label: 'Settings' },
+ ];
+ 
+-export default function Nav() {
++export default function Nav({ reviewCount = 0 }: { reviewCount?: number }) {
+   const pathname = usePathname() || '';
+   return (
+     <nav style={{ display: 'flex', gap: 2, marginLeft: 8 }}>
+@@ -18,6 +19,7 @@ export default function Nav() {
+         return (
+           <Link key={href} href={href} className={active ? 'navlink active' : 'navlink'} aria-current={active ? 'page' : undefined}>
+             {label}
++            {href === '/review' && reviewCount > 0 && <span className="nav-count" aria-label={`${reviewCount} waiting`}>{reviewCount}</span>}
+           </Link>
+         );
+       })}
+diff --git a/src/app/(app)/layout.tsx b/src/app/(app)/layout.tsx
+index 2d651a5..f4dfd24 100644
+--- a/src/app/(app)/layout.tsx
++++ b/src/app/(app)/layout.tsx
+@@ -3,6 +3,7 @@ import Link from 'next/link';
+ import { getContext } from '@/lib/auth';
+ import { logoutAction } from '@/app/actions';
+ import Nav from './Nav';
++import { pendingReviewCount } from '@/lib/guardrails';
+ 
+ export default async function AppLayout({ children }: { children: React.ReactNode }) {
+   const ctx = await getContext();
+@@ -21,7 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
+       <header className="appbar">
+         <div className="wrap appbar-row">
+           <Link href="/dashboard" className="brand"><span className="brand-mark" /><span>IXIA</span></Link>
+-          <Nav />
++          <Nav reviewCount={pendingReviewCount(ctx.workspace.id)} />
+           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14 }}>
+             {trialLeft !== null && (
+               <Link href="/settings#billing" className="pill pill-amber" style={{ textDecoration: 'none' }}>
+diff --git a/src/app/(app)/leads/[id]/page.tsx b/src/app/(app)/leads/[id]/page.tsx
+index 7a7230e..5beed56 100644
+--- a/src/app/(app)/leads/[id]/page.tsx
++++ b/src/app/(app)/leads/[id]/page.tsx
+@@ -4,6 +4,7 @@ import { getContext } from '@/lib/auth';
+ import { getLead } from '@/lib/metrics';
+ import { updateLeadStatusAction, addLeadNoteAction } from '@/app/actions';
+ import CopyButton, { LeadStatusControl } from '@/components/CopyButton';
++import { auditRecords } from '@/lib/guardrails';
+ 
+ const fmt = (ts: number) => new Date(ts).toLocaleString();
+ 
+@@ -15,6 +16,9 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
+   if (!data) notFound();
+   const { lead, events } = data;
+   const ws = ctx.workspace;
++  let guard: any = null;
++  try { guard = lead.guard_json ? JSON.parse(lead.guard_json) : null; } catch { guard = null; }
++  const trail = guard ? auditRecords(ws.id, lead.id) : [];
+ 
+   const slaMs = Math.max(5, Number(ws.sla_minutes) || 60) * 60_000;
+   const slaMissed =
+@@ -70,6 +74,33 @@ export default async function LeadDetail({ params }: { params: Promise<{ id: str
+             </div>
+           </div>
+ 
++          {guard && (
++            <div className="card" style={{ padding: 20, marginBottom: 18 }}>
++              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
++                <span className="kicker">Guardrails gate</span>
++                <span className={`pill ${guard.decision === 'auto_send' ? 'pill-go' : guard.decision === 'block' ? 'pill-leak' : 'pill-amber'}`}>
++                  {guard.decision === 'auto_send' ? 'sent automatically' : guard.decision === 'block' ? 'blocked' : 'held for review'}{lead.review_status && lead.review_status !== 'pending' ? ` · ${lead.review_status}` : ''}
++                </span>
++              </div>
++              <ul className="gate-flags" style={{ marginTop: 12 }}>
++                {(guard.checks || []).map((c: any) => (
++                  <li key={c.id} className={`gate-${c.status}`}><b>{c.label}</b><span>{c.detail}</span><em className="mono">{c.source}</em></li>
++                ))}
++              </ul>
++              <p className="mono subtle" style={{ fontSize: '.72rem', margin: 0 }}>
++                {Object.values(guard.models || {}).join(' · ')} · prompt {guard.promptVersion} · retrieved {(guard.retrieved || []).map((r: any) => r.id).join(', ') || '—'}
++              </p>
++              {lead.ai_draft && lead.review_status === 'pending' && (
++                <p style={{ margin: '12px 0 0' }}><Link href="/review" className="btn btn-ghost" style={{ minHeight: 0, padding: '7px 14px', fontSize: '.8rem' }}>Review the held draft →</Link></p>
++              )}
++              {trail.length > 0 && (
++                <div className="mono subtle" style={{ fontSize: '.7rem', marginTop: 12, display: 'grid', gap: 2 }}>
++                  {trail.map((r) => <span key={r.seq}>#{r.seq} {r.action} · {r.actor} · {r.hash.slice(0, 12)}…</span>)}
++                </div>
++              )}
++            </div>
++          )}
++
+           {lead.ai_reply && (
+             <div className="card" style={{ padding: 20, borderLeft: '3px solid var(--go)' }}>
+               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
+diff --git a/src/app/(app)/settings/page.tsx b/src/app/(app)/settings/page.tsx
+index 89b92db..e80f014 100644
+--- a/src/app/(app)/settings/page.tsx
++++ b/src/app/(app)/settings/page.tsx
+@@ -3,12 +3,14 @@ import { getContext } from '@/lib/auth';
+ import CopyButton from '@/components/CopyButton';
+ import SettingsForm from './SettingsForm';
+ import BillingButtons from './BillingButtons';
+-import { rotateApiKeyAction } from '@/app/actions';
++import { rotateApiKeyAction, addKbAction, deleteKbAction, toggleGuardAction } from '@/app/actions';
++import { listKb, guardConfigured } from '@/lib/guardrails';
+ 
+ export default async function SettingsPage() {
+   const ctx = await getContext();
+   if (!ctx) redirect('/login');
+   const ws = ctx.workspace;
++  const kb = listKb(ws.id);
+   const base = process.env.IXIA_BASE_URL || '';
+   const embed = `<script src="${base}/embed/form.js" data-ixia-key="${ws.api_key}" defer></script>`;
+   const endpoint = `${base}/api/intake`;
+@@ -68,6 +70,34 @@ export default async function SettingsPage() {
+             </div>
+           </div>
+ 
++          <div id="kb" className="card" style={{ padding: 22 }}>
++            <span className="kicker">Guardrails · knowledge base</span>
++            <h3 style={{ fontSize: '1.05rem', margin: '6px 0 6px' }}>What the AI may tell a new client</h3>
++            <p className="muted" style={{ fontSize: '.86rem', marginTop: 0 }}>
++              Fees, hours, services, what to bring. The gate holds any draft that states a fact, price, phone number or link not found here.
++              {!guardConfigured() && ' (Off on this install: set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.)'}
++            </p>
++            <form action={toggleGuardAction} style={{ display: 'flex', gap: 10, alignItems: 'center', margin: '0 0 14px' }}>
++              <input type="checkbox" id="guard-enabled" name="enabled" defaultChecked={ws.guard_enabled !== 0} style={{ width: 'auto' }} />
++              <label htmlFor="guard-enabled" style={{ margin: 0 }}>Gate every first response</label>
++              <button className="btn btn-ghost" style={{ minHeight: 0, padding: '5px 12px', fontSize: '.78rem' }}>Save</button>
++            </form>
++            <div style={{ display: 'grid', gap: 0, borderTop: '1px solid var(--border)' }}>
++              {kb.map((k) => (
++                <div key={k.rowId} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
++                  <div><b style={{ fontSize: '.9rem' }}>{k.title}</b> <span className="mono subtle" style={{ fontSize: '.7rem' }}>[{k.id}]</span><div className="muted" style={{ fontSize: '.84rem' }}>{k.text}</div></div>
++                  <form action={deleteKbAction}><input type="hidden" name="id" value={k.rowId} /><button className="btn btn-ghost" aria-label={`Delete ${k.title}`} style={{ minHeight: 0, padding: '4px 10px', fontSize: '.74rem' }}>Delete</button></form>
++                </div>
++              ))}
++              {kb.length === 0 && <p className="muted" style={{ fontSize: '.84rem' }}>No entries yet.</p>}
++            </div>
++            <form action={addKbAction} style={{ marginTop: 14 }}>
++              <div className="field"><label htmlFor="kb-title">Title</label><input id="kb-title" name="title" maxLength={120} required placeholder="First consultation" /></div>
++              <div className="field"><label htmlFor="kb-text">Text</label><textarea id="kb-text" name="text" rows={3} maxLength={1500} required placeholder="45 minutes, by video or at our office, EUR 150 excluding VAT." /></div>
++              <button className="btn btn-primary">Add entry</button>
++            </form>
++          </div>
++
+           <div id="billing" className="card" style={{ padding: 22 }}>
+             <span className="kicker">Plan & billing</span>
+             <h3 style={{ fontSize: '1.05rem', margin: '6px 0 6px' }}>Current: {ws.plan}{ws.stripe_status ? ` · ${ws.stripe_status}` : ''}</h3>
+diff --git a/src/app/actions.ts b/src/app/actions.ts
+index 3803073..a9c1aa4 100644
+--- a/src/app/actions.ts
++++ b/src/app/actions.ts
+@@ -10,7 +10,8 @@ import {
+ } from '@/lib/auth';
+ import { rateLimit, clientIpFromHeaders } from '@/lib/ratelimit';
+ import { logEvent } from '@/lib/intake';
+-import { sendWelcomeEmail } from '@/lib/email';
++import { sendWelcomeEmail, sendEmail, wrapBody } from '@/lib/email';
++import { audit, disclosure } from '@/lib/guardrails';
+ 
+ async function clientIp(): Promise<string> {
+   const h = await headers();
+@@ -120,3 +121,71 @@ export async function rotateApiKeyAction() {
+   db().prepare('UPDATE workspaces SET api_key=? WHERE id=?').run(newKey, ctx.workspace.id);
+   revalidatePath('/settings');
+ }
++
++// ── Guardrails (TechEx 2026) ────────────────────────────────────────────────
++
++/** Reviewer decision on a held draft: approve as-is, send an edited text, or reject. */
++export async function reviewLeadAction(formData: FormData) {
++  const ctx = await getContext();
++  if (!ctx) redirect('/login');
++  const id = String(formData.get('id') || '');
++  const action = String(formData.get('action') || '');
++  const text = String(formData.get('text') || '').trim().slice(0, 4000);
++  if (!['approved', 'edited_and_sent', 'rejected'].includes(action)) return;
++  const ws = ctx.workspace;
++  const lead = db().prepare("SELECT * FROM leads WHERE id=? AND workspace_id=? AND review_status='pending'").get(id, ws.id) as any;
++  if (!lead) return;
++  let guard: any = {};
++  try { guard = JSON.parse(lead.guard_json || '{}'); } catch { /* keep empty */ }
++
++  if (action !== 'rejected') {
++    const body = action === 'approved'
++      ? `${(lead.ai_draft || '').trim()}\n\n${disclosure(guard.lang || 'en', ws.name)}`
++      : text;
++    if (!body.trim()) return;
++    if (lead.email) {
++      try {
++        const r = await sendEmail({ to: lead.email, from: ws.from_email || undefined, subject: `Re: your enquiry to ${ws.name}`, text: wrapBody(ws, body) });
++        logEvent(id, ws.id, 'routed', `reviewed reply emailed (${r.via})`);
++      } catch (e: any) { logEvent(id, ws.id, 'routed', `email failed: ${e?.message || e}`); }
++    }
++    db().prepare("UPDATE leads SET review_status=?, ai_reply=?, status=CASE WHEN status IN ('leaking','new') THEN 'responded' ELSE status END WHERE id=?")
++      .run(action === 'approved' ? 'approved' : 'edited', body, id);
++  } else {
++    db().prepare("UPDATE leads SET review_status='rejected' WHERE id=?").run(id);
++  }
++  logEvent(id, ws.id, 'review', `${action.replace(/_/g, ' ')} by ${ctx.user.email}`);
++  try { await audit(ws.id, id, { decision: lead.guard_decision || '', action, actor: ctx.user.email, promptVersion: guard.promptVersion }); } catch { /* non-fatal */ }
++  revalidatePath('/review');
++  revalidatePath('/leads/' + id);
++  revalidatePath('/dashboard');
++}
++
++export async function addKbAction(formData: FormData) {
++  const ctx = await getContext();
++  if (!ctx) redirect('/login');
++  const title = String(formData.get('title') || '').trim().slice(0, 120);
++  const text = String(formData.get('text') || '').trim().slice(0, 1500);
++  if (!title || !text) return;
++  const count = (db().prepare('SELECT COUNT(*) n FROM kb_snippets WHERE workspace_id=?').get(ctx.workspace.id) as any).n;
++  if (count >= 60) return;
++  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'entry';
++  const taken = db().prepare('SELECT 1 FROM kb_snippets WHERE workspace_id=? AND slug=?').get(ctx.workspace.id, slug);
++  db().prepare('INSERT INTO kb_snippets (id,workspace_id,slug,title,text,created_at) VALUES (?,?,?,?,?,?)')
++    .run('kb_' + randomBytes(10).toString('hex'), ctx.workspace.id, taken ? `${slug}_${count + 1}` : slug, title, text, Date.now());
++  revalidatePath('/settings');
++}
++
++export async function deleteKbAction(formData: FormData) {
++  const ctx = await getContext();
++  if (!ctx) redirect('/login');
++  db().prepare('DELETE FROM kb_snippets WHERE id=? AND workspace_id=?').run(String(formData.get('id') || ''), ctx.workspace.id);
++  revalidatePath('/settings');
++}
++
++export async function toggleGuardAction(formData: FormData) {
++  const ctx = await getContext();
++  if (!ctx) redirect('/login');
++  db().prepare('UPDATE workspaces SET guard_enabled=? WHERE id=?').run(formData.get('enabled') ? 1 : 0, ctx.workspace.id);
++  revalidatePath('/settings');
++}
+diff --git a/src/app/globals.css b/src/app/globals.css
+index f7d17b9..6af63ff 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -124,3 +124,20 @@ table.leads tr:hover td { background: var(--surface-2); }
+   letter-spacing: .02em; padding: 8px 16px; border-bottom: 1px solid var(--border); text-align: center; }
+ .trial-banner a { font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+ .trial-banner.urgent { background: var(--leak-soft); color: var(--leak); border-bottom-color: rgba(229,72,77,.3); }
++
++/* Guardrails (TechEx 2026) */
++.review-item { padding: 20px; }
++.review-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
++.review-msg { margin: 10px 0 12px; font-size: .95rem; }
++.review-cols { display: grid; grid-template-columns: 1fr 1.3fr; gap: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
++.review-sent { white-space: pre-wrap; font-size: .86rem; color: var(--muted); margin: 6px 0 0; }
++.gate-flags { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--border); }
++.gate-flags li { display: grid; grid-template-columns: 220px 1fr auto; gap: 12px; padding: 8px 0 8px 12px; border-bottom: 1px solid var(--border); font-size: .86rem; position: relative; }
++.gate-flags li::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--amber); }
++.gate-flags li.gate-block::before { background: var(--leak); }
++.gate-flags li.gate-pass::before { background: var(--go); }
++.gate-flags li.gate-info::before { background: var(--accent); }
++.gate-flags li span { color: var(--muted); }
++.gate-flags li em { font-style: normal; font-size: .7rem; color: var(--subtle); }
++.nav-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 99px; background: var(--amber); color: #fff; font: 600 .66rem var(--font-mono), monospace; }
++@media (max-width: 760px) { .review-cols { grid-template-columns: 1fr; } .gate-flags li { grid-template-columns: 1fr; } }
+diff --git a/src/db/index.ts b/src/db/index.ts
+index 41db0f1..994f5a1 100644
+--- a/src/db/index.ts
++++ b/src/db/index.ts
+@@ -24,6 +24,13 @@ export function db(): Database.Database {
+     'ALTER TABLE workspaces ADD COLUMN digest_last_sent_at INTEGER',
+     'ALTER TABLE workspaces ADD COLUMN trial_warned_at INTEGER',
+     'CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)',
++    // Guardrails (TechEx 2026)
++    'ALTER TABLE workspaces ADD COLUMN guard_enabled INTEGER DEFAULT 1',
++    'ALTER TABLE leads ADD COLUMN guard_decision TEXT',
++    'ALTER TABLE leads ADD COLUMN guard_json TEXT',
++    'ALTER TABLE leads ADD COLUMN review_status TEXT',
++    'ALTER TABLE leads ADD COLUMN ai_draft TEXT',
++    'CREATE INDEX IF NOT EXISTS idx_leads_review ON leads(workspace_id, review_status)',
+   ];
+   for (const sql of migrations) {
+     try { d.exec(sql); } catch { /* column/index already exists — safe to ignore */ }
+diff --git a/src/db/schema.sql b/src/db/schema.sql
+index 50ba1dd..7500948 100644
+--- a/src/db/schema.sql
++++ b/src/db/schema.sql
+@@ -87,3 +87,26 @@ CREATE TABLE IF NOT EXISTS followups (
+   created_at   INTEGER NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS idx_followups_due ON followups(status, run_at);
++
++-- Guardrails (TechEx 2026): knowledge base the AI may quote, and a
++-- hash-chained audit log of every gate decision and reviewer action.
++CREATE TABLE IF NOT EXISTS kb_snippets (
++  id           TEXT PRIMARY KEY,
++  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
++  slug         TEXT NOT NULL,
++  title        TEXT NOT NULL,
++  text         TEXT NOT NULL,
++  created_at   INTEGER NOT NULL
++);
++CREATE INDEX IF NOT EXISTS idx_kb_ws ON kb_snippets(workspace_id);
++
++CREATE TABLE IF NOT EXISTS audit_log (
++  id           TEXT PRIMARY KEY,
++  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
++  lead_id      TEXT,
++  seq          INTEGER NOT NULL,
++  hash         TEXT NOT NULL,
++  record_json  TEXT NOT NULL,
++  created_at   INTEGER NOT NULL
++);
++CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_ws_seq ON audit_log(workspace_id, seq);
+diff --git a/src/lib/email.ts b/src/lib/email.ts
+index 493167e..bf730f8 100644
+--- a/src/lib/email.ts
++++ b/src/lib/email.ts
+@@ -31,9 +31,11 @@ export async function sendEmail(opts: { to: string; subject: string; text: strin
+  * the business-name signature line plus a small "Powered by IXIA" / reply-to footer.
+  * Keeps every outbound first-response and follow-up looking on-brand and replyable.
+  */
+-export function wrapBody(ws: { name?: string; from_email?: string }, body: string): string {
++export function wrapBody(ws: { name?: string; from_email?: string }, body: string, opts?: { signed?: boolean }): string {
+   const replyTo = ws?.from_email ? `\nReply directly to this email and a person will pick it up.` : '';
+-  return `${body.trim()}\n\n— ${ws?.name || 'The team'}${replyTo}\n\nPowered by IXIA · ixia.online`;
++  // Guardrails messages already carry the signature and the AI-disclosure line.
++  const sig = opts?.signed ? '' : `\n\n— ${ws?.name || 'The team'}`;
++  return `${body.trim()}${sig}${replyTo ? (opts?.signed ? '\n' : '') + replyTo : ''}\n\nPowered by IXIA · ixia.online`;
+ }
+ 
+ /**
+diff --git a/src/lib/intake.ts b/src/lib/intake.ts
+index a535104..c0a75fb 100644
+--- a/src/lib/intake.ts
++++ b/src/lib/intake.ts
+@@ -3,6 +3,7 @@ import { db, uid, now } from '@/db';
+ import { qualifyAndRespond } from '@/lib/ai';
+ import { sendEmail, wrapBody } from '@/lib/email';
+ import { rateLimit } from '@/lib/ratelimit';
++import { guardEnabledFor, runGate, audit } from '@/lib/guardrails';
+ 
+ export function logEvent(leadId: string, wsId: string, type: string, detail = '') {
+   db().prepare('INSERT INTO lead_events (id,lead_id,workspace_id,type,detail,created_at) VALUES (?,?,?,?,?,?)')
+@@ -37,7 +38,26 @@ export async function processLead(ws: any, input: {
+   // scraped key can't burn provider tokens indefinitely. The lead is still
+   // captured for the dashboard; only the auto-response is suppressed.
+   let q: Awaited<ReturnType<typeof qualifyAndRespond>>;
+-  if (withinDailyBudget) {
++  let gated: Awaited<ReturnType<typeof runGate>> | null = null;
++  if (withinDailyBudget && guardEnabledFor(ws)) {
++    // Guardrails: grounded draft + safety/verifier/rule checks. The enquirer
++    // always gets `outgoing` now: the checked draft, or a safe acknowledgement
++    // in their language while the draft waits in the review queue.
++    try { gated = await runGate(ws, input); } catch (e: any) { logEvent(leadId, ws.id, 'guard_error', String(e?.message || e).slice(0, 200)); }
++  }
++  if (gated) {
++    q = { matter_type: gated.draft.matterType, urgency: gated.draft.urgency, summary: gated.draft.summary || (input.message || '').slice(0, 200), reply: gated.outgoing };
++    const { raw, ...draft } = gated.draft;
++    db().prepare('UPDATE leads SET guard_decision=?, guard_json=?, review_status=?, ai_draft=? WHERE id=?')
++      .run(gated.decision, JSON.stringify({ ...gated, draft }), gated.decision === 'auto_send' ? null : 'pending', gated.draft.reply, leadId);
++    const flagged = gated.checks.filter((c) => c.status === 'review' || c.status === 'block').map((c) => c.id);
++    logEvent(leadId, ws.id, 'guard', `${gated.decision}${flagged.length ? ' · ' + flagged.join(', ') : ''}`);
++    try {
++      await audit(ws.id, leadId, { decision: gated.decision, action: 'triaged', actor: 'ixia-guard',
++        checks: gated.checks.map((c) => ({ id: c.id, status: c.status })), models: gated.models, promptVersion: gated.promptVersion,
++        leadText: `${input.name || ''}\n${input.message || ''}` });
++    } catch { /* audit must never block intake */ }
++  } else if (withinDailyBudget) {
+     q = await qualifyAndRespond(input, ws);
+   } else {
+     q = { matter_type: 'general', urgency: 'medium',
+@@ -57,7 +77,7 @@ export async function processLead(ws: any, input: {
+       && rateLimit(`mail:${ws.id}:${input.email.toLowerCase()}`, 2, 86_400_000)) {
+     try {
+       const r = await sendEmail({ to: input.email, from: ws.from_email || undefined,
+-        subject: `Re: your enquiry to ${ws.name}`, text: wrapBody(ws, q.reply) });
++        subject: `Re: your enquiry to ${ws.name}`, text: wrapBody(ws, q.reply, { signed: !!gated }) });
+       logEvent(leadId, ws.id, 'routed', `first response emailed (${r.via})`);
+     } catch (e: any) { logEvent(leadId, ws.id, 'routed', `email failed: ${e?.message || e}`); }
+   }
+@@ -65,8 +85,8 @@ export async function processLead(ws: any, input: {
+   if (ws.notify_email && withinDailyBudget) {
+     try {
+       await sendEmail({ to: ws.notify_email, from: ws.from_email || undefined,
+-        subject: `New ${q.urgency}-priority lead · ${q.matter_type}`,
+-        text: `New lead via ${input.channel || 'form'}\n\nName: ${input.name || '—'}\nEmail: ${input.email || '—'}\nPhone: ${input.phone || '—'}\n\nMessage:\n${input.message || '—'}\n\nAI summary: ${q.summary}\nRespond before SLA: ${new Date(slaDue).toISOString()}` });
++        subject: `${gated && gated.decision !== 'auto_send' ? '[Review] ' : ''}New ${q.urgency}-priority lead · ${q.matter_type}`,
++        text: `New lead via ${input.channel || 'form'}${gated && gated.decision !== 'auto_send' ? `\n\nHELD FOR REVIEW: the client got a safe acknowledgement; approve or edit the AI draft in IXIA → Review.` : ''}\n\nName: ${input.name || '—'}\nEmail: ${input.email || '—'}\nPhone: ${input.phone || '—'}\n\nMessage:\n${input.message || '—'}\n\nAI summary: ${q.summary}\nRespond before SLA: ${new Date(slaDue).toISOString()}` });
+     } catch { /* non-fatal */ }
+   }
+ 
+@@ -124,7 +144,13 @@ export async function runMaintenance() {
+   }
+ 
+   // SLA breach: a lead still "new" past its SLA window is leaking
+-  const breached = d.prepare("SELECT id,workspace_id FROM leads WHERE status='new' AND sla_due_at<?").all(ts) as any[];
++  // Held for review counts as leaking too once the SLA passes without a human reply.
++  let breached: any[];
++  try {
++    breached = d.prepare("SELECT id,workspace_id FROM leads WHERE (status='new' OR (review_status='pending' AND status='responded')) AND sla_due_at<?").all(ts) as any[];
++  } catch {
++    breached = d.prepare("SELECT id,workspace_id FROM leads WHERE status='new' AND sla_due_at<?").all(ts) as any[];
++  }
+   for (const l of breached) {
+     d.prepare("UPDATE leads SET status='leaking' WHERE id=?").run(l.id);
+     logEvent(l.id, l.workspace_id, 'status_change', 'SLA breached → leaking');
