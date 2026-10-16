@@ -15,6 +15,7 @@ const GUARD_CATEGORIES: Record<string, string> = {
   S13: 'elections', S14: 'code interpreter abuse',
 };
 const REVIEW_CATEGORIES = new Set(['S6', 'S7']);
+const SENSITIVE = new Set(['health', 'criminal', 'migration_status', 'minor', 'safety_risk', 'religion_orientation_ethnicity', 'trade_union']);
 
 async function timed<T>(trace: TraceStep[], step: string, model: string | undefined, fn: () => Promise<T>): Promise<T> {
   const t0 = Date.now();
@@ -64,6 +65,14 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
         raw,
       };
       draftOk = true;
+      const modelSensitive: string[] = Array.isArray(j.sensitive_data) ? j.sensitive_data.map(String).filter((c: string) => SENSITIVE.has(c)) : [];
+      const extra = modelSensitive.filter((c) => !special.includes(c));
+      if (extra.length) {
+        const c = checks.find((x) => x.id === 'special_category_data')!;
+        special.push(...extra);
+        c.status = 'review'; c.source = special.length > extra.length ? 'rule' : 'verifier';
+        c.detail = `Mentions: ${special.join(', ')} (${extra.join(', ')} found by the draft model). A human answers; the auto-reply repeats none of it.`;
+      }
     }
   } catch (err: any) {
     trace.push({ step: 'draft_error', ms: 0, note: String(err?.message || err).slice(0, 200) });

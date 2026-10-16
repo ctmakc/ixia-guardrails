@@ -2,15 +2,25 @@
 // talked out of a verdict by the enquiry text, which is why they exist next to
 // the model-based checks.
 
+// JavaScript's \b and \w are ASCII-only even with the u flag, so Cyrillic and
+// accented words would never match. ure() rewrites them to Unicode-aware forms.
+const W = '[\\p{L}\\p{N}_]';
+const B = `(?:(?<=${W})(?!${W})|(?<!${W})(?=${W}))`;
+function ure(re: RegExp): RegExp {
+  return new RegExp(re.source.replace(/\\b/g, B).replace(/\\w/g, W), re.flags.includes('u') ? re.flags : re.flags + 'u');
+}
+
 // Special categories of personal data (GDPR Art. 9) plus data a firm should
 // never echo back in an automated email: health, criminal matters, migration
 // status, minors, religion, sexual orientation, ethnicity, union membership.
 const SPECIAL: { cat: string; re: RegExp }[] = [
-  { cat: 'health', re: /\b(diagnos\w*|cancer|kanker|krebs|depress\w*|burn-?out|pregnan\w*|zwanger\w*|schwanger\w*|enceinte|embarazad\w*|hiv|chemo\w*|psychiat\w*|therap\w*|medicat\w*|medicij\w*|disabilit\w*|handicap\w*|ziek\w*|krank\w*|malad\w*|enferm\w*|sick leave|ziekteverlof|arbeitsunfähig\w*|arrêt maladie|baja médica|хвор\w*|діагноз\w*|вагітн\w*)/i },
-  { cat: 'criminal', re: /\b(arrest\w*|criminal record|conviction|convicted|police custody|detained|detention|aangehouden|strafblad|veroordeel\w*|verhaftet|vorstraf\w*|festgenommen|garde à vue|casier judiciaire|arrêté|detenid\w*|antecedentes penales|затриман\w*|судимість|ув'?язнен\w*)/i },
-  { cat: 'migration_status', re: /\b(undocumented|illegal(ly)? (staying|resident)|overstay\w*|deport\w*|asylum|asiel\w*|uitzetting|ongedocumenteerd|abschiebung|asyl\w*|duldung|sans[- ]papiers|expulsion|demande d'asile|sin papeles|deportaci\w*|asilo|депортац\w*|притулок|біженц\w*)/i },
-  { cat: 'minor', re: /\b(my (son|daughter|child|kid)s? (is|are) \d{1,2}|\d{1,2}[- ]year[- ]old (son|daughter|child|boy|girl)|minderjarig\w*|mijn (zoon|dochter) van \d{1,2}|minderjährig\w*|mon (fils|enfant) de \d{1,2}|ma fille de \d{1,2}|mineur\w*|menor de edad|неповнолітн\w*)/i },
-  { cat: 'religion_orientation_ethnicity', re: /\b(muslim|islam\w*|jewish|joods|jüdisch|juif|judío|christian|gay|lesbian|homosex\w*|transgender|bisexual|ethnic\w*|etnisch\w*|race|ras\b|trade union|vakbond|gewerkschaft|syndicat|sindicato)/i },
+  { cat: 'health', re: ure(/\b(diagnos\w*|cancer|kanker|krebs|depress\w*|burn-?out|pregnan\w*|zwanger\w*|schwanger\w*|enceinte|embarazad\w*|hiv|chemo\w*|psychiat\w*|therap\w*|medicat\w*|medicij\w*|disabilit\w*|handicap\w*|ziek\w*|krank\w*|malad\w*|enferm\w*|sick leave|ziekteverlof|arbeitsunfähig\w*|arrêt maladie|baja médica|хвор\w*|діагноз\w*|вагітн\w*)/i) },
+  { cat: 'criminal', re: ure(/\b(arrest\w*|criminal record|conviction|convicted|police custody|detained|detention|aangehouden|strafblad|veroordeel\w*|verhaftet|vorstraf\w*|festgenommen|garde à vue|casier judiciaire|arrêté|detenid\w*|antecedentes penales|затриман\w*|судимість|ув'?язнен\w*)/i) },
+  { cat: 'migration_status', re: ure(/\b(undocumented|illegal(ly)? (staying|resident)|overstay\w*|deport\w*|asylum|asiel\w*|uitzetting|ongedocumenteerd|abschiebung|asyl\w*|duldung|sans[- ]papiers|expulsion|demande d'asile|sin papeles|deportaci\w*|asilo|депортац\w*|притулок|біженц\w*)/i) },
+  { cat: 'minor', re: ure(/(\b(son|daughter|child|kid|zoon|dochter|kind|sohn|tochter|fils|fille|enfant|hijo|hija)\b|\b(син|дочк|доньк)\S*)[^.!?\n]{0,25}?\d{1,2}|\b(minderjarig\w*|minderjährig\w*|mineur\w*|menor de edad|underage|minor child|неповнолітн\S*)/i) },
+  { cat: 'safety_risk', re: ure(/\b(hits? me|beat(s|ing)? me|domestic (violence|abuse)|abus(e|ive|ed)|threaten\w*|violen\w*|geweld\w*|mishandel\w*|bedreig\w*|gewalt\w*|schlägt mich|bedroh\w*|violence\w*|me frappe|menace\w*|maltrato\w*|me pega|amenaz\w*|насильств\w*|б'?є мене|погрож\w*|suicid\w*|kill myself|end my life|can'?t go on|zelfmoord|selbstmord|me suicider|suicidarme|самогубств\w*)/i) },
+  { cat: 'religion_orientation_ethnicity', re: ure(/\b(muslim|islam\w*|jewish|joods|jüdisch|juif|judío|christian|gay|lesbian|homosex\w*|transgender|bisexual|ethnic\w*|etnisch\w*|race|ras\b)/i) },
+  { cat: 'trade_union', re: ure(/\b(trade union|union member|vakbond\w*|gewerkschaft\w*|syndicat\w*|sindicato\w*|профспіл\w*)/i) },
 ];
 
 export function specialCategories(text: string): string[] {
@@ -22,14 +32,14 @@ export function specialCategories(text: string): string[] {
 // Prompt-injection markers in the inbound text. Enquiries come from the public
 // internet through an embeddable form, so any instruction aimed at the model is
 // treated as hostile input and the draft is held.
-const INJECTION = /(ignore (all |any )?(the )?(previous|prior|above) (instructions|prompts?)|disregard (your|the) (rules|instructions)|you are now|system prompt|act as (an?|the) |reveal (your|the) (prompt|instructions)|negeer (alle )?(vorige|eerdere) instructies|ignoriere (alle )?(vorherigen|bisherigen) anweisungen|ignore[sz]? (les|toutes les) instructions|ignora (las|todas las) instrucciones|ігноруй (попередні|всі) інструкції|<\/?(system|assistant)>|\[\/?INST\])/i;
+const INJECTION = ure(/(ignore (all |any )?(the )?(previous|prior|above) (instructions|prompts?)|disregard (your|the) (rules|instructions)|you are now|system prompt|act as (an?|the) |reveal (your|the) (prompt|instructions)|negeer (alle )?(vorige|eerdere) instructies|ignoriere (alle )?(vorherigen|bisherigen) anweisungen|ignore[sz]? (les|toutes les) instructions|ignora (las|todas las) instrucciones|ігноруй (попередні|всі) інструкції|<\/?(system|assistant)>|\[\/?INST\])/i);
 
 export function promptInjection(text: string): boolean {
   return INJECTION.test(text || '');
 }
 
 // Outcome promises in the drafted reply (deterministic net under the verifier).
-const GUARANTEE = /(\bguarantee\w*|\b100 ?%|you will (definitely |certainly )?win|we (always|never) lose|certain(ly)? (to )?succeed|garande(ren|ert)|zeker winnen|gewinnen sie sicher|garantier\w*|nous garantissons|vous allez gagner|garantiza\w*|ganará seguro|гарант\w*|точно виграєте)/i;
+const GUARANTEE = ure(/(\bguarantee\w*|\b100 ?%|you will (definitely |certainly )?win|we (always|never) lose|certain(ly)? (to )?succeed|garande(ren|ert)|zeker winnen|gewinnen sie sicher|garantier\w*|nous garantissons|vous allez gagner|garantiza\w*|ganará seguro|гарант\w*|точно виграєте)/i);
 
 export function promisesOutcome(reply: string): boolean {
   return GUARANTEE.test(reply || '');
@@ -78,7 +88,7 @@ export function foreignContacts(reply: string, allowedText: string): string[] {
 
 // Urgency markers: hearings, deadlines, detention. Raises priority; it does not
 // by itself hold the reply.
-const URGENT = /\b(urgent\w*|asap|today|tomorrow|tonight|deadline|hearing|court date|emergency|spoed\w*|vandaag|morgen|zitting|dringend|heute|frist|anhörung|urgence|aujourd'hui|demain|audience|urgente|hoy|mañana|audiencia|терміново|сьогодні|завтра|суд)\b/i;
+const URGENT = ure(/\b(urgent\w*|asap|today|tomorrow|tonight|deadline|hearing|court date|emergency|spoed\w*|vandaag|morgen|zitting|dringend|heute|frist|anhörung|urgence|aujourd'hui|demain|audience|urgente|hoy|mañana|audiencia|терміново|сьогодні|завтра|суд)\b/i);
 
 export function urgent(text: string): boolean {
   return URGENT.test(text || '');

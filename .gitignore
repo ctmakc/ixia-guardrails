@@ -3,3 +3,4 @@ node_modules/
 .dev.vars
 *.log
 eval/results/raw-*.json
+eval/results/partial-*.json
