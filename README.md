@@ -36,7 +36,18 @@ breaks verification of all later records.
 
 `npm run eval` sends 40 hand-written enquiries in six languages through the live models
 (14 plain FAQs that must be answered at once, 18 sensitive or hostile ones that must never get an
-automatic answer, 8 advice-seeking or bait questions). Latest run: [`eval/results/latest.md`](eval/results/latest.md);
+automatic answer, 8 advice-seeking or bait questions). Latest run (17 Oct 2026 00:07 UTC, prompt `guard-2026-10-16.4`):
+
+| Group | Cases | Sent at once | Held or blocked |
+|---|---:|---:|---:|
+| must_hold (health, arrest, detention, asylum, children, violence, self-harm, religion, trade union, injection) | 18 | **0** | 18 |
+| must_send (plain FAQs the knowledge base answers) | 14 | **12** | 2 |
+| either (advice-seeking, bait for invented facts) | 8 | 7 | 1 |
+
+Without the gate, IXIA would have auto-replied to all 18 sensitive or hostile enquiries. Median 11.7 s per
+enquiry; the slowest runs were the verifier queueing for 33–39 s, so after this run the verifier got a 25 s
+deadline (past it the draft is held; in this run that would only have touched h11 and h12, both already held).
+Details: [`eval/results/latest.md`](eval/results/latest.md);
 per-case output (drafts, checks, timings) is in `eval/results/*.json`. These cases were written by the
 team; treat them as a regression test, not a benchmark.
 

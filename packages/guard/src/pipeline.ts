@@ -15,6 +15,13 @@ const GUARD_CATEGORIES: Record<string, string> = {
   S13: 'elections', S14: 'code interpreter abuse',
 };
 const REVIEW_CATEGORIES = new Set(['S6', 'S7']);
+const VERIFIER_TIMEOUT_MS = 25_000;
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((ok, bad) => {
+    const t = setTimeout(() => bad(new Error(`timeout ${ms} ms`)), ms);
+    p.then((v) => { clearTimeout(t); ok(v); }, (e) => { clearTimeout(t); bad(e); });
+  });
+}
 const SENSITIVE = new Set(['health', 'criminal', 'migration_status', 'minor', 'safety_risk', 'religion_orientation_ethnicity', 'trade_union']);
 
 async function timed<T>(trace: TraceStep[], step: string, model: string | undefined, fn: () => Promise<T>): Promise<T> {
@@ -91,8 +98,12 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
     const [guardOut, verOut] = await Promise.all([
       timed(trace, 'safety', models.safety, () =>
         llm.guard(models.safety, [{ role: 'user', content: message }, { role: 'assistant', content: reply }])).catch((x) => `error: ${x}`),
-      timed(trace, 'verify', models.verifier, () =>
-        llm.chat(models.verifier, verifierMessages(ws, e, reply, grounding), { maxTokens: 1500, json: true, reasoningEffort: 'low' })).catch((x) => `error: ${x}`),
+      // The verifier occasionally queues for 30 s+. Past the deadline the draft
+      // is held (the client already gets the safe acknowledgement), so a slow
+      // model never delays the first reply.
+      timed(trace, 'verify', models.verifier, () => withTimeout(
+        llm.chat(models.verifier, verifierMessages(ws, e, reply, grounding), { maxTokens: 1500, json: true, reasoningEffort: 'low' }),
+        VERIFIER_TIMEOUT_MS)).catch((x) => `error: ${x}`),
     ]);
 
     // Llama Guard

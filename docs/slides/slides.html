@@ -57,7 +57,7 @@ h1{font-size:132px} h2{font-size:76px;margin-bottom:44px;max-width:1500px}
 <div><span class="m">@cf/meta/llama-guard-3-8b</span><p>Safety taxonomy on the (enquiry, reply) pair. S6 specialised advice and S7 privacy hold; other hazards block.</p></div>
 <div><span class="m">@cf/openai/gpt-oss-120b</span><p>Independent verifier, low reasoning effort: unsupported claims, case advice, promised outcomes, echoed details.</p></div>
 </div>
-<p class="lede" style="margin-top:36px">Checks run in parallel. Median 8.8 s per enquiry end to end in the eval run. The same TypeScript core runs in a Pages Function, in IXIA's Node server and in the eval runner.</p><div class="foot"><span>IXIA Guardrails · TechEx Amsterdam Hackathon 2026</span><span>04</span></div></section><section class="slide"><div class="k">What the client receives</div>
+<p class="lede" style="margin-top:36px">Checks run in parallel. Median 11.7 s per enquiry end to end in the eval run. The same TypeScript core runs in a Pages Function, in IXIA's Node server and in the eval runner.</p><div class="foot"><span>IXIA Guardrails · TechEx Amsterdam Hackathon 2026</span><span>04</span></div></section><section class="slide"><div class="k">What the client receives</div>
 <h2>Held does not mean silent.</h2>
 <div class="lanes"><div><div class="k" style="color:var(--go)">Sent to the client now</div><pre>Beste Lisa,
 
@@ -80,10 +80,10 @@ The AI draft waits in the review queue with its citations and the reasons it was
 <h2>No automatic reply to a sensitive enquiry.</h2>
 <div class="grid3">
 <div><div class="big">0<span style="font-size:60px;color:var(--muted)"> / 18</span></div><div class="lbl">sensitive or hostile enquiries auto-replied<br>(without the gate: 18 / 18)</div></div>
-<div><div class="big">11<span style="font-size:60px;color:var(--muted)"> / 14</span></div><div class="lbl">plain FAQs answered instantly<br>from the knowledge base</div></div>
-<div><div class="big">8.8<span style="font-size:60px;color:var(--muted)"> s</span></div><div class="lbl">median per enquiry, p95 14.9 s</div></div>
+<div><div class="big">12<span style="font-size:60px;color:var(--muted)"> / 14</span></div><div class="lbl">plain FAQs answered instantly<br>from the knowledge base</div></div>
+<div><div class="big">11.7<span style="font-size:60px;color:var(--muted)"> s</span></div><div class="lbl">median per enquiry, p95 40.4 s</div></div>
 </div>
-<p class="lede" style="margin-top:56px;font-size:28px">Sensitive set: health, arrest, detention, asylum, children, violence, self-harm, religion, trade union, three injection attempts. 8 more advice-seeking or bait questions: 5 sent, 3 held. Run 2026-10-16T19-18-10 UTC, prompt guard-2026-10-16.2. Cases written by the team; a regression test, not a benchmark.</p><div class="foot"><span>IXIA Guardrails · TechEx Amsterdam Hackathon 2026</span><span>07</span></div></section><section class="slide"><div class="k">Business value</div>
+<p class="lede" style="margin-top:56px;font-size:28px">Sensitive set: health, arrest, detention, asylum, children, violence, self-harm, religion, trade union, three injection attempts. 8 more advice-seeking or bait questions: 7 sent, 1 held. Run 2026-10-17T00-07-28 UTC, prompt guard-2026-10-16.4. Cases written by the team; a regression test, not a benchmark.</p><div class="foot"><span>IXIA Guardrails · TechEx Amsterdam Hackathon 2026</span><span>07</span></div></section><section class="slide"><div class="k">Business value</div>
 <h2>Speed for the firm, control for the partner who signs.</h2>
 <div class="rows" style="--cols:380px 1fr">
 <div><b>Who pays</b><p>Law firms, immigration consultants, clinics: businesses where a reply is regulated and a lost enquiry is lost revenue.</p></div>
