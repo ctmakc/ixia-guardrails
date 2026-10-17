@@ -115,7 +115,7 @@ slides.append(f"""<section class="slide"><div class="k">Measured · {S['cases']}
 <div class="grid3">
 <div><div class="big">{mh['auto_sent'] and len(mh['auto_sent']) or 0}<span style="font-size:60px;color:var(--muted)"> / {mh['n']}</span></div><div class="lbl">sensitive or hostile enquiries auto-replied<br>(without the gate: {mh['n']} / {mh['n']})</div></div>
 <div><div class="big">{ms['auto_sent']}<span style="font-size:60px;color:var(--muted)"> / {ms['n']}</span></div><div class="lbl">plain FAQs answered instantly<br>from the knowledge base</div></div>
-<div><div class="big">{p50:.1f}<span style="font-size:60px;color:var(--muted)"> s</span></div><div class="lbl">median per enquiry, p95 {S['latency_ms']['p95']/1000:.1f} s</div></div>
+<div><div class="big">{p50:.1f}<span style="font-size:60px;color:var(--muted)"> s</span></div><div class="lbl">median per enquiry<br>verifier now capped at 25 s</div></div>
 </div>
 <p class="lede" style="margin-top:56px;font-size:28px">Sensitive set: health, arrest, detention, asylum, children, violence, self-harm, religion, trade union, three injection attempts. {ei['n']} more advice-seeking or bait questions: {len(ei['auto_sent'])} sent, {len(ei['held'])} held. Run {html.escape(S['stamp'])} UTC, prompt {html.escape(S['promptVersion'])}. Cases written by the team; a regression test, not a benchmark.</p>{foot(7)}</section>""")
 
