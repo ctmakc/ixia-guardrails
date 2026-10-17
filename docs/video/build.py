@@ -71,6 +71,36 @@ def ts(t):
     return f'{int(h):02d}:{int(m):02d}:{int(s):02d},{int((s % 1) * 1000):03d}'
 
 
+LABEL = WORK / 'label-wait.png'
+
+
+def make_label():
+    from PIL import Image, ImageDraw, ImageFont
+    im = Image.new('RGBA', (560, 64), (12, 15, 22, 215))
+    d = ImageDraw.Draw(im)
+    try:
+        f = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf', 26)
+    except Exception:
+        f = ImageFont.load_default()
+    d.text((22, 16), 'waiting for the models · 4x speed', fill=(240, 243, 248, 255), font=f)
+    im.save(LABEL)
+
+
+def compress_wait(src, m, out):
+    """Keeps the click and the result at real speed; plays the model wait faster, labelled."""
+    if out.exists():
+        return out
+    make_label()
+    ws, we, total = max(0.0, m['wait_start']), m['wait_end'], dur(src)
+    a0 = max(0.0, ws - 2.5)
+    sp = max(4.0, (we - ws) / 3.0)
+    fc = (f"[0:v]trim={a0:.3f}:{ws:.3f},setpts=PTS-STARTPTS[a];"
+          f"[0:v]trim={ws:.3f}:{we:.3f},setpts=(PTS-STARTPTS)/{sp:.3f}[b0];[b0][1:v]overlay=W-w-40:40[b];"
+          f"[0:v]trim={we:.3f}:{total:.3f},setpts=PTS-STARTPTS[c];[a][b][c]concat=n=3:v=1:a=0,fps={FPS}[v]")
+    run('ffmpeg', '-y', '-i', str(src), '-i', str(LABEL), '-filter_complex', fc, '-map', '[v]', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', str(out))
+    return out
+
+
 segs, srt, t0, idx = [], [], 0.0, 1
 for i, sc in enumerate(scenes):
     text = sc['text'].format(**VARS)
@@ -86,15 +116,17 @@ for i, sc in enumerate(scenes):
             '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-an', str(seg))
     else:
         clip = CLIPS / f'{sc["clip"]}.webm'
+        marks = CLIPS / f'{sc["clip"]}.json'
+        if marks.exists():
+            clip = compress_wait(clip, json.loads(marks.read_text()), WORK / f'{sc["clip"]}-cw.mp4')
         c = dur(clip)
         speed = 1.0
         if c > d:
             speed = min(c / d, 1.6)
         vf = f'setpts=PTS/{speed:.4f},scale={W}:{H}:flags=lanczos,fps={FPS},format=yuv420p'
         eff = c / speed
-        if eff > d:  # still too long: keep the end, where the result is
-            start = (eff - d) * speed
-            pre = ['-ss', f'{start:.3f}']
+        if eff > d:  # still too long: cut the tail (the result has been on screen for a while)
+            pre = []
         else:
             pre = []
             vf += f',tpad=stop_mode=clone:stop_duration={d - eff + 0.1:.3f}'
@@ -125,7 +157,7 @@ run('ffmpeg', '-y', *inputs, '-filter_complex', ';'.join(filt), '-map', '[out]',
 srt_path = OUT / 'ixia-guardrails.srt'
 srt_path.write_text('\n'.join(srt))
 final = OUT / 'ixia-guardrails-demo.mp4'
-style = "FontName=DejaVu Sans,FontSize=11,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&HB0101318,BorderStyle=4,Outline=0,Shadow=0,MarginV=18"
+style = "FontName=DejaVu Sans,FontSize=11,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&HB0101318,BorderStyle=4,Outline=0,Shadow=0,MarginV=26"
 run('ffmpeg', '-y', '-i', str(silent), '-i', str(audio), '-vf', f"subtitles={srt_path}:force_style='{style}'",
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '21', '-c:a', 'copy', '-shortest', '-movflags', '+faststart', str(final))
 print(f'{final}  {dur(final):.1f}s  scenes={len(segs)}')
