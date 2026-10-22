@@ -3,7 +3,7 @@
 **Instant AI replies to new client enquiries, with a human on the risky ones.**
 Built for the TechEx Amsterdam Hackathon (AI & Big Data Expo Europe), 16–19 October 2026.
 
-Live demo: **https://ixia-guardrails.pages.dev** · runs entirely on Cloudflare Workers AI.
+Live demo: **https://guardrails.ixia.online** · runs entirely on Cloudflare Workers AI.
 
 ## The problem
 
