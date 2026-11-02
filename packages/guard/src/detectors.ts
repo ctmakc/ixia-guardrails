@@ -45,9 +45,10 @@ export function promisesOutcome(reply: string): boolean {
   return GUARANTEE.test(reply || '');
 }
 
-// Money amounts and percentages in the reply. Every one of them must appear in
-// the knowledge-base snippets the model retrieved; otherwise the model invented
-// a fee, a rate or a deadline-type number.
+// Money amounts and percentages in the reply. Every one of them must appear as
+// a money amount or percentage in the knowledge-base snippets the model
+// retrieved; otherwise the model invented a fee or a rate. A bare number in the
+// KB ("45 minutes", "09:00", the SLA) does not ground a price.
 export function numbersIn(text: string): string[] {
   const out = new Set<string>();
   const re = /(€|eur|euro|\$|usd|£|cad|гривень|грн)\s?\d[\d.,]*|\d[\d.,]*\s?(€|eur|euro|euros|\$|usd|£|%|percent|procent|prozent|pour ?cent|por ?ciento|грн|гривень)/gi;
@@ -59,12 +60,8 @@ export function numbersIn(text: string): string[] {
 }
 
 export function ungroundedNumbers(reply: string, groundText: string): string[] {
-  const allowed = new Set(numbersInLoose(groundText));
+  const allowed = new Set(numbersIn(groundText));
   return numbersIn(reply).filter((n) => !allowed.has(n));
-}
-
-function numbersInLoose(text: string): string[] {
-  return [...(text || '').matchAll(/\d[\d.,]*/g)].map((m) => m[0].replace(/[^\d]/g, '').replace(/^0+/, '')).filter(Boolean);
 }
 
 // Contact data in the reply that the firm did not publish (e-mails, phone
