@@ -38,7 +38,8 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
 
   // 1. Inbound checks (deterministic)
   const heuristicLang = detectLang(message);
-  const injected = promptInjection(message);
+  // The name field reaches the drafting prompt too ("From: …").
+  const injected = promptInjection(`${enquiry.name || ''}\n${message}`);
   checks.push({ id: 'prompt_injection', label: 'Instructions aimed at the AI in the enquiry', source: 'rule',
     status: injected ? 'review' : 'pass', detail: injected ? 'Enquiry contains text that tries to steer the model.' : 'None found.' });
   const special = specialCategories(message);
