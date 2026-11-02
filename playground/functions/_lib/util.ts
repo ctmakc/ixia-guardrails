@@ -13,7 +13,7 @@ export const json = (data: unknown, status = 200) =>
 export async function takeBudget(env: Env, ip: string): Promise<{ ok: boolean; reason?: string; left?: number }> {
   const day = new Date().toISOString().slice(0, 10);
   const gKey = `g:${day}`;
-  const iKey = `ip:${day}:${ip}`;
+  const iKey = `ip:${day}:${visitorKey(ip)}`;
   const [g, i] = await Promise.all([env.RATE.get(gKey), env.RATE.get(iKey)]);
   const gN = Number(g || 0), iN = Number(i || 0);
   const gMax = limit(env.DAILY_LIVE_RUNS, 120), iMax = limit(env.PER_IP_PER_DAY, 25);
@@ -31,4 +31,16 @@ export async function takeBudget(env: Env, ip: string): Promise<{ ok: boolean; r
 function limit(v: string | undefined, fallback: number): number {
   const n = Number(v);
   return v !== undefined && v.trim() !== '' && Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+// One IPv6 client usually owns a whole /64, so per-address buckets were
+// trivially bypassed by rotating the interface id. Bucket IPv6 by /64.
+export function visitorKey(ip: string): string {
+  if (!ip.includes(':')) return ip;
+  if (ip.includes('.')) return ip.slice(ip.lastIndexOf(':') + 1); // IPv4-mapped (::ffff:a.b.c.d)
+  const [head, tail] = ip.toLowerCase().split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail !== undefined ? (tail ? tail.split(':') : []) : null;
+  const groups = t === null ? h : [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill('0'), ...t];
+  return groups.slice(0, 4).map((g) => (g.replace(/^0+/, '') || '0')).join(':') + '::/64';
 }
