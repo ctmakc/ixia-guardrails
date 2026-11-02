@@ -66,17 +66,26 @@ export function ungroundedNumbers(reply: string, groundText: string): string[] {
 
 // Contact data in the reply that the firm did not publish (e-mails, phone
 // numbers, URLs). Catches hallucinated phone numbers and links to third parties.
+// E-mails and links must match a published one exactly (case, scheme and a
+// trailing slash aside): a truncated "https://cal.example.co" or
+// "intake@demo-law.ex" is a different address, not a quote of the real one.
+const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+const LINK = /https?:\/\/[^\s)<>"']+|(?<![\w./@-])www\.[^\s)<>"']+/gi;
+const PHONE = /\+?\d[\d\s().-]{7,}\d/g;
+const normLink = (u: string) => u.toLowerCase().replace(/[.,;:!?]+$/, '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+
 export function foreignContacts(reply: string, allowedText: string): string[] {
-  const allowed = (allowedText || '').toLowerCase();
+  const allowed = allowedText || '';
+  const allowedEmails = new Set([...allowed.matchAll(EMAIL)].map((m) => m[0].toLowerCase()));
+  const allowedLinks = new Set([...allowed.matchAll(LINK)].map((m) => normLink(m[0])));
   // Phone numbers in the allowed text, digits only, one per entry.
-  const allowedDigits = [...allowed.matchAll(/\+?\d[\d\s().-]{7,}\d/g)].map((m) => m[0].replace(/\D/g, ''));
+  const allowedDigits = [...allowed.matchAll(PHONE)].map((m) => m[0].replace(/\D/g, ''));
   const found: string[] = [];
-  for (const m of (reply || '').matchAll(/[\w.+-]+@[\w-]+\.[\w.-]+/g)) if (!allowed.includes(m[0].toLowerCase())) found.push(m[0]);
-  for (const m of (reply || '').matchAll(/https?:\/\/[^\s)]+/g)) {
-    const u = m[0].replace(/[.,;]+$/, '').toLowerCase();
-    if (!allowed.includes(u)) found.push(m[0]);
+  for (const m of (reply || '').matchAll(EMAIL)) if (!allowedEmails.has(m[0].toLowerCase())) found.push(m[0]);
+  for (const m of (reply || '').matchAll(LINK)) {
+    if (!allowedLinks.has(normLink(m[0]))) found.push(m[0].replace(/[.,;:!?]+$/, ''));
   }
-  for (const m of (reply || '').matchAll(/\+?\d[\d\s().-]{7,}\d/g)) {
+  for (const m of (reply || '').matchAll(PHONE)) {
     const digits = m[0].replace(/\D/g, '');
     if (digits.length >= 8 && !allowedDigits.includes(digits)) found.push(m[0].trim());
   }
