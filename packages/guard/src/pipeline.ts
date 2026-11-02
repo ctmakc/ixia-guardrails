@@ -127,6 +127,10 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
     const v = parseJson<any>(String(verOut));
     if (!v) {
       checks.push({ id: 'verifier', label: 'Grounding verifier', source: 'verifier', status: 'review', detail: 'Verifier unavailable or malformed; held for a human.' });
+      // The deterministic guarantee rule does not depend on the verifier.
+      const promise = promisesOutcome(reply);
+      checks.push({ id: 'outcome_promise', label: 'No promised outcome', source: 'rule',
+        status: promise ? 'block' : 'pass', detail: promise ? 'Draft promises or implies a result.' : 'None.' });
     } else {
       const claims: string[] = Array.isArray(v.unsupported_claims) ? v.unsupported_claims.map(String).filter(Boolean) : [];
       checks.push({ id: 'unsupported_claims', label: 'Every fact backed by the knowledge base', source: 'verifier',
