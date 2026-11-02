@@ -10,5 +10,5 @@
     "types": ["@cloudflare/workers-types", "node"],
     "noEmit": true
   },
-  "include": ["packages/**/*.ts", "playground/functions/**/*.ts", "eval/**/*.ts"]
+  "include": ["packages/**/*.ts", "playground/functions/**/*.ts", "playground/test/**/*.ts", "eval/**/*.ts"]
 }
