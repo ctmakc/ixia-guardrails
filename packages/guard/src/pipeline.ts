@@ -169,7 +169,12 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
   const decision: Decision = checks.some((c) => c.status === 'block') ? 'block'
     : checks.some((c) => c.status === 'review') ? 'hold_for_review' : 'auto_send';
 
-  const first = (e.name || '').trim().split(/\s+/)[0];
+  // The enquirer's name goes into an e-mail sent from the firm's address
+  // without passing the outbound checks, so only a plausible first name is
+  // used; anything else (a link, an address, a number) falls back to the
+  // anonymous greeting.
+  const first0 = (e.name || '').trim().split(/\s+/)[0] || '';
+  const first = /^\p{L}[\p{L}\p{M}'’-]{0,39}$/u.test(first0) ? first0 : '';
   const disclosure = fill(AI_DISCLOSURE[lang], { firm: ws.name });
   const outgoing = decision === 'auto_send'
     ? `${reply.trim()}${reply.includes(ws.name) ? '' : `\n\n— ${ws.name}`}\n\n${disclosure}`
