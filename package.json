@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test packages/guard/test/*.test.ts",
+    "test": "tsx --test packages/guard/test/*.test.ts playground/test/*.test.ts",
     "smoke": "tsx eval/smoke.ts",
     "eval": "tsx eval/run.ts",
     "dev": "cd playground && wrangler pages dev public --ai AI",

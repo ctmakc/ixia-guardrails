@@ -15,7 +15,7 @@ function ure(re: RegExp): RegExp {
 // status, minors, religion, sexual orientation, ethnicity, union membership.
 const SPECIAL: { cat: string; re: RegExp }[] = [
   { cat: 'health', re: ure(/\b(diagnos\w*|cancer|kanker|krebs|depress\w*|burn-?out|pregnan\w*|zwanger\w*|schwanger\w*|enceinte|embarazad\w*|hiv|chemo\w*|psychiat\w*|therap\w*|medicat\w*|medicij\w*|disabilit\w*|handicap\w*|ziek\w*|krank\w*|malad\w*|enferm\w*|sick leave|ziekteverlof|arbeitsunfähig\w*|arrêt maladie|baja médica|хвор\w*|діагноз\w*|вагітн\w*)/i) },
-  { cat: 'criminal', re: ure(/\b(arrest\w*|criminal record|conviction|convicted|police custody|detained|detention|aangehouden|strafblad|veroordeel\w*|verhaftet|vorstraf\w*|festgenommen|garde à vue|casier judiciaire|arrêté|detenid\w*|antecedentes penales|затриман\w*|судимість|ув'?язнен\w*)/i) },
+  { cat: 'criminal', re: ure(/\b(arrest\w*|criminal record|conviction|convicted|police custody|detained|detention|aangehouden|strafblad|veroordeel\w*|verhaftet|vorstraf\w*|festgenommen|garde à vue|casier judiciaire|arrêté|detenid\w*|antecedentes penales|затриман\w*|затримал[иа]\w*|заарешт\w*|судимість|ув'?язнен\w*)/i) },
   { cat: 'migration_status', re: ure(/\b(undocumented|illegal(ly)? (staying|resident)|overstay\w*|deport\w*|asylum|asiel\w*|uitzetting|ongedocumenteerd|abschiebung|asyl\w*|duldung|sans[- ]papiers|expulsion|demande d'asile|sin papeles|deportaci\w*|asilo|депортац\w*|притулок|біженц\w*)/i) },
   { cat: 'minor', re: ure(/(\b(son|daughter|child|kid|zoon|dochter|kind|sohn|tochter|fils|fille|enfant|hijo|hija)\b|\b(син|дочк|доньк)\S*)[^.!?\n]{0,25}?\d{1,2}|\b(minderjarig\w*|minderjährig\w*|mineur\w*|menor de edad|underage|minor child|неповнолітн\S*)/i) },
   { cat: 'safety_risk', re: ure(/\b(hits? me|beat(s|ing)? me|domestic (violence|abuse)|abus(e|ive|ed)|threaten\w*|violen\w*|geweld\w*|mishandel\w*|bedreig\w*|gewalt\w*|schlägt mich|bedroh\w*|violence\w*|me frappe|menace\w*|maltrato\w*|me pega|amenaz\w*|насильств\w*|б'?є мене|погрож\w*|suicid\w*|kill myself|end my life|can'?t go on|zelfmoord|selbstmord|me suicider|suicidarme|самогубств\w*)/i) },
@@ -45,9 +45,10 @@ export function promisesOutcome(reply: string): boolean {
   return GUARANTEE.test(reply || '');
 }
 
-// Money amounts and percentages in the reply. Every one of them must appear in
-// the knowledge-base snippets the model retrieved; otherwise the model invented
-// a fee, a rate or a deadline-type number.
+// Money amounts and percentages in the reply. Every one of them must appear as
+// a money amount or percentage in the knowledge-base snippets the model
+// retrieved; otherwise the model invented a fee or a rate. A bare number in the
+// KB ("45 minutes", "09:00", the SLA) does not ground a price.
 export function numbersIn(text: string): string[] {
   const out = new Set<string>();
   const re = /(€|eur|euro|\$|usd|£|cad|гривень|грн)\s?\d[\d.,]*|\d[\d.,]*\s?(€|eur|euro|euros|\$|usd|£|%|percent|procent|prozent|pour ?cent|por ?ciento|грн|гривень)/gi;
@@ -59,27 +60,32 @@ export function numbersIn(text: string): string[] {
 }
 
 export function ungroundedNumbers(reply: string, groundText: string): string[] {
-  const allowed = new Set(numbersInLoose(groundText));
+  const allowed = new Set(numbersIn(groundText));
   return numbersIn(reply).filter((n) => !allowed.has(n));
-}
-
-function numbersInLoose(text: string): string[] {
-  return [...(text || '').matchAll(/\d[\d.,]*/g)].map((m) => m[0].replace(/[^\d]/g, '').replace(/^0+/, '')).filter(Boolean);
 }
 
 // Contact data in the reply that the firm did not publish (e-mails, phone
 // numbers, URLs). Catches hallucinated phone numbers and links to third parties.
+// E-mails and links must match a published one exactly (case, scheme and a
+// trailing slash aside): a truncated "https://cal.example.co" or
+// "intake@demo-law.ex" is a different address, not a quote of the real one.
+const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+const LINK = /https?:\/\/[^\s)<>"']+|(?<![\w./@-])www\.[^\s)<>"']+/gi;
+const PHONE = /\+?\d[\d\s().-]{7,}\d/g;
+const normLink = (u: string) => u.toLowerCase().replace(/[.,;:!?]+$/, '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+
 export function foreignContacts(reply: string, allowedText: string): string[] {
-  const allowed = (allowedText || '').toLowerCase();
+  const allowed = allowedText || '';
+  const allowedEmails = new Set([...allowed.matchAll(EMAIL)].map((m) => m[0].toLowerCase()));
+  const allowedLinks = new Set([...allowed.matchAll(LINK)].map((m) => normLink(m[0])));
   // Phone numbers in the allowed text, digits only, one per entry.
-  const allowedDigits = [...allowed.matchAll(/\+?\d[\d\s().-]{7,}\d/g)].map((m) => m[0].replace(/\D/g, ''));
+  const allowedDigits = [...allowed.matchAll(PHONE)].map((m) => m[0].replace(/\D/g, ''));
   const found: string[] = [];
-  for (const m of (reply || '').matchAll(/[\w.+-]+@[\w-]+\.[\w.-]+/g)) if (!allowed.includes(m[0].toLowerCase())) found.push(m[0]);
-  for (const m of (reply || '').matchAll(/https?:\/\/[^\s)]+/g)) {
-    const u = m[0].replace(/[.,;]+$/, '').toLowerCase();
-    if (!allowed.includes(u)) found.push(m[0]);
+  for (const m of (reply || '').matchAll(EMAIL)) if (!allowedEmails.has(m[0].toLowerCase())) found.push(m[0]);
+  for (const m of (reply || '').matchAll(LINK)) {
+    if (!allowedLinks.has(normLink(m[0]))) found.push(m[0].replace(/[.,;:!?]+$/, ''));
   }
-  for (const m of (reply || '').matchAll(/\+?\d[\d\s().-]{7,}\d/g)) {
+  for (const m of (reply || '').matchAll(PHONE)) {
     const digits = m[0].replace(/\D/g, '');
     if (digits.length >= 8 && !allowedDigits.includes(digits)) found.push(m[0].trim());
   }

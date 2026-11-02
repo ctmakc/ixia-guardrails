@@ -38,7 +38,8 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
 
   // 1. Inbound checks (deterministic)
   const heuristicLang = detectLang(message);
-  const injected = promptInjection(message);
+  // The name field reaches the drafting prompt too ("From: …").
+  const injected = promptInjection(`${enquiry.name || ''}\n${message}`);
   checks.push({ id: 'prompt_injection', label: 'Instructions aimed at the AI in the enquiry', source: 'rule',
     status: injected ? 'review' : 'pass', detail: injected ? 'Enquiry contains text that tries to steer the model.' : 'None found.' });
   const special = specialCategories(message);
@@ -116,16 +117,23 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
       checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard',
         status: blocking.length ? 'block' : 'review',
         detail: `Unsafe: ${cats.map((c) => `${c} ${GUARD_CATEGORIES[c] || ''}`.trim()).join(', ') || 'unspecified'}.` });
-    } else {
+    } else if (/^safe\b/.test(g)) {
       checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard', status: 'pass', detail: 'Safe.' });
+    } else {
+      // Empty or unexpected output is not a verdict: fail closed.
+      checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard', status: 'review', detail: 'Safety model gave no clear verdict; held for a human.' });
     }
 
     // Verifier
-    const v = parseJson<any>(String(verOut));
+    const v = verifierVerdict(parseJson<any>(String(verOut)));
     if (!v) {
       checks.push({ id: 'verifier', label: 'Grounding verifier', source: 'verifier', status: 'review', detail: 'Verifier unavailable or malformed; held for a human.' });
+      // The deterministic guarantee rule does not depend on the verifier.
+      const promise = promisesOutcome(reply);
+      checks.push({ id: 'outcome_promise', label: 'No promised outcome', source: 'rule',
+        status: promise ? 'block' : 'pass', detail: promise ? 'Draft promises or implies a result.' : 'None.' });
     } else {
-      const claims: string[] = Array.isArray(v.unsupported_claims) ? v.unsupported_claims.map(String).filter(Boolean) : [];
+      const claims = v.unsupported_claims;
       checks.push({ id: 'unsupported_claims', label: 'Every fact backed by the knowledge base', source: 'verifier',
         status: claims.length ? 'review' : 'pass', detail: claims.length ? `Not in KB: ${claims.slice(0, 4).join('; ')}` : 'All statements supported.' });
       checks.push({ id: 'specific_advice', label: 'No advice on the person’s own case', source: 'verifier',
@@ -162,7 +170,12 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
   const decision: Decision = checks.some((c) => c.status === 'block') ? 'block'
     : checks.some((c) => c.status === 'review') ? 'hold_for_review' : 'auto_send';
 
-  const first = (e.name || '').trim().split(/\s+/)[0];
+  // The enquirer's name goes into an e-mail sent from the firm's address
+  // without passing the outbound checks, so only a plausible first name is
+  // used; anything else (a link, an address, a number) falls back to the
+  // anonymous greeting.
+  const first0 = (e.name || '').trim().split(/\s+/)[0] || '';
+  const first = /^\p{L}[\p{L}\p{M}'’-]{0,39}$/u.test(first0) ? first0 : '';
   const disclosure = fill(AI_DISCLOSURE[lang], { firm: ws.name });
   const outgoing = decision === 'auto_send'
     ? `${reply.trim()}${reply.includes(ws.name) ? '' : `\n\n— ${ws.name}`}\n\n${disclosure}`
@@ -176,6 +189,18 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
     retrieved: hits.map((h) => ({ id: h.snippet.id, title: h.snippet.title, score: Math.round(h.score * 1000) / 1000 })),
     trace, models: { ...models }, promptVersion: PROMPT_VERSION, createdAt: new Date().toISOString(),
   };
+}
+
+// The verifier's JSON must carry every field with the expected type. A reply
+// like {"error": "overloaded"} or {"promises_outcome": "false"} is not a
+// pass: missing or mistyped fields make the whole verdict unusable (held).
+function verifierVerdict(v: any): { unsupported_claims: string[]; gives_specific_advice: boolean; promises_outcome: boolean; repeats_sensitive: boolean; note?: string } | null {
+  if (!v || typeof v !== 'object' || !Array.isArray(v.unsupported_claims)) return null;
+  const bool = (x: unknown) => (x === true || x === 'true' ? true : x === false || x === 'false' ? false : undefined);
+  const advice = bool(v.gives_specific_advice), promise = bool(v.promises_outcome), sensitive = bool(v.repeats_sensitive);
+  if (advice === undefined || promise === undefined || sensitive === undefined) return null;
+  return { unsupported_claims: v.unsupported_claims.map(String).filter(Boolean), gives_specific_advice: advice,
+    promises_outcome: promise, repeats_sensitive: sensitive, note: typeof v.note === 'string' ? v.note : undefined };
 }
 
 function systemFacts(ws: Workspace) {

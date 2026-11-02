@@ -201,7 +201,13 @@ function renderChain(bad) {
   for (const r of chain.slice(-12)) {
     const li = document.createElement('li');
     if (bad && r.seq >= bad) li.className = 'bad';
-    li.innerHTML = `<span class="seq">${r.seq}</span><span>${r.action} · ${r.decision.replace(/_/g, ' ')} <span class="h">${r.actor}</span></span><span class="h">${r.hash.slice(0, 10)}</span>`;
+    // Record fields come back from the server/localStorage: text only, never HTML.
+    li.innerHTML = '<span class="seq"></span><span><span class="act"></span> <span class="h"></span></span><span class="h"></span>';
+    const [seq, , act, actor, hash] = li.querySelectorAll('span');
+    seq.textContent = String(r.seq);
+    act.textContent = `${r.action} · ${String(r.decision).replace(/_/g, ' ')}`;
+    actor.textContent = String(r.actor);
+    hash.textContent = String(r.hash).slice(0, 10);
     ol.appendChild(li);
   }
 }

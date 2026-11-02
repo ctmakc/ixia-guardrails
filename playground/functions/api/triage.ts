@@ -1,6 +1,6 @@
 import { triage, bindingClient, appendRecord, sha256, type AuditRecord } from '../../../packages/guard/src/index';
 import { DEMO_WORKSPACE } from '../../../packages/guard/src/demo-workspace';
-import { json, takeBudget, type Env } from '../_lib/util';
+import { json, isAuditRecord, takeBudget, type Env } from '../_lib/util';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let body: any;
@@ -15,7 +15,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const t0 = Date.now();
   const result = await triage(bindingClient(env.AI), DEMO_WORKSPACE, { name, message, channel: 'form' });
-  const prev: AuditRecord | null = body?.prev && typeof body.prev.hash === 'string' ? body.prev : null;
+  const prev: AuditRecord | null = isAuditRecord(body?.prev) ? body.prev : null;
   const record = await appendRecord(prev, {
     at: result.createdAt,
     leadRef: (await sha256(`${name}\n${message}`)).slice(0, 16),
