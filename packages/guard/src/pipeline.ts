@@ -116,8 +116,11 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
       checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard',
         status: blocking.length ? 'block' : 'review',
         detail: `Unsafe: ${cats.map((c) => `${c} ${GUARD_CATEGORIES[c] || ''}`.trim()).join(', ') || 'unspecified'}.` });
-    } else {
+    } else if (/^safe\b/.test(g)) {
       checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard', status: 'pass', detail: 'Safe.' });
+    } else {
+      // Empty or unexpected output is not a verdict: fail closed.
+      checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard', status: 'review', detail: 'Safety model gave no clear verdict; held for a human.' });
     }
 
     // Verifier
