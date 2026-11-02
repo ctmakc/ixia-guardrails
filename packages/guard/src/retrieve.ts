@@ -3,7 +3,9 @@ import type { KbSnippet, ModelClient } from './types';
 export interface Retrieved { snippet: KbSnippet; score: number }
 
 // Embedding cache per process: KB snippets change rarely, enquiries never repeat.
+// Bounded so a long-running multi-tenant server does not grow it forever.
 const cache = new Map<string, number[]>();
+const CACHE_MAX = 5000;
 
 function cosine(a: number[], b: number[]) {
   let dot = 0, na = 0, nb = 0;
@@ -18,9 +20,10 @@ export async function retrieve(llm: ModelClient, model: string, query: string, k
   : Promise<{ hits: Retrieved[]; mode: 'dense' | 'lexical' }> {
   if (!kb.length) return { hits: [], mode: 'dense' };
   try {
+    if (cache.size > CACHE_MAX) cache.clear();
     const missing = kb.filter((s) => !cache.has(key(model, s)));
     const texts = [query, ...missing.map((s) => `${s.title}. ${s.text}`)];
-    const vec = new Map(kb.map((s) => [s, cache.get(key(model, s))]));
+    const vec = new Map(kb.map((s) => [s, cache.get(key(model, s))])); // snapshot: the cache may be cleared while we await
     const vecs = await llm.embed(model, texts);
     // A short or malformed response must not be cached: an undefined vector
     // would make every later retrieval for that snippet fall back to lexical.
