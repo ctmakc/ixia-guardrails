@@ -1,3 +1,5 @@
+import type { AuditRecord } from '../../../packages/guard/src/index';
+
 export interface Env {
   AI: { run: (model: string, input: any) => Promise<any> };
   RATE: KVNamespace;
@@ -43,4 +45,17 @@ export function visitorKey(ip: string): string {
   const t = tail !== undefined ? (tail ? tail.split(':') : []) : null;
   const groups = t === null ? h : [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill('0'), ...t];
   return groups.slice(0, 4).map((g) => (g.replace(/^0+/, '') || '0')).join(':') + '::/64';
+}
+
+// Audit records arrive from the browser (the demo keeps its chain in
+// localStorage). Shape-check them before hashing: a missing field used to
+// throw inside verifyChain (HTTP 500), and a string seq made the next record
+// "51" instead of 6.
+export function isAuditRecord(r: any): r is AuditRecord {
+  return !!r && typeof r === 'object' && Number.isSafeInteger(r.seq) && r.seq >= 1
+    && typeof r.hash === 'string' && /^[0-9a-f]{64}$/.test(r.hash) && typeof r.prevHash === 'string'
+    && typeof r.at === 'string' && typeof r.leadRef === 'string' && typeof r.decision === 'string'
+    && Array.isArray(r.checks) && r.checks.every((c: any) => c && typeof c.id === 'string' && typeof c.status === 'string')
+    && !!r.models && typeof r.models === 'object' && !Array.isArray(r.models) && Object.values(r.models).every((m) => typeof m === 'string')
+    && typeof r.promptVersion === 'string' && typeof r.actor === 'string' && typeof r.action === 'string';
 }

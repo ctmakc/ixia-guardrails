@@ -1,5 +1,5 @@
 import { appendRecord, verifyChain, type AuditRecord } from '../../../packages/guard/src/index';
-import { json, type Env } from '../_lib/util';
+import { json, isAuditRecord, type Env } from '../_lib/util';
 
 // POST {op:"append", prev, entry} → next record (reviewer actions in the demo queue)
 // POST {op:"verify", records}     → {ok, brokenAt}
@@ -8,13 +8,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request }) => {
   try { b = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
   if (b?.op === 'verify') {
     const recs: AuditRecord[] = Array.isArray(b.records) ? b.records.slice(0, 500) : [];
+    const bad = recs.findIndex((r) => !isAuditRecord(r));
+    if (bad >= 0) return json({ ok: false, brokenAt: Number.isSafeInteger((recs[bad] as any)?.seq) ? recs[bad].seq : bad + 1 });
     return json(await verifyChain(recs));
   }
   if (b?.op === 'append') {
     const e = b.entry || {};
     const allowed = ['approved', 'edited_and_sent', 'rejected'];
     if (!allowed.includes(e.action)) return json({ error: 'bad_action' }, 400);
-    const rec = await appendRecord(b.prev?.hash ? b.prev : null, {
+    if (b.prev != null && !isAuditRecord(b.prev)) return json({ error: 'bad_prev' }, 400);
+    const rec = await appendRecord(b.prev ?? null, {
       at: new Date().toISOString(),
       leadRef: String(e.leadRef || '').slice(0, 16),
       decision: String(e.decision || '').slice(0, 20),
