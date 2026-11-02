@@ -20,10 +20,15 @@ export async function retrieve(llm: ModelClient, model: string, query: string, k
   try {
     const missing = kb.filter((s) => !cache.has(key(model, s)));
     const texts = [query, ...missing.map((s) => `${s.title}. ${s.text}`)];
+    const vec = new Map(kb.map((s) => [s, cache.get(key(model, s))]));
     const vecs = await llm.embed(model, texts);
-    missing.forEach((s, i) => cache.set(key(model, s), vecs[i + 1]));
+    // A short or malformed response must not be cached: an undefined vector
+    // would make every later retrieval for that snippet fall back to lexical.
+    const isVec = (v: unknown): v is number[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'number');
+    if (!Array.isArray(vecs) || vecs.length !== texts.length || !vecs.every(isVec)) throw new Error('bad embedding response');
+    missing.forEach((s, i) => { cache.set(key(model, s), vecs[i + 1]); vec.set(s, vecs[i + 1]); });
     const q = vecs[0];
-    const hits = kb.map((s) => ({ snippet: s, score: cosine(q, cache.get(key(model, s))!) }))
+    const hits = kb.map((s) => ({ snippet: s, score: cosine(q, vec.get(s)!) }))
       .sort((a, b) => b.score - a.score).slice(0, k);
     return { hits, mode: 'dense' };
   } catch {
