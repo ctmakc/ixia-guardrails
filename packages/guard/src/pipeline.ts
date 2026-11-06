@@ -72,7 +72,7 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
         raw,
       };
       draftOk = true;
-      const modelSensitive: string[] = Array.isArray(j.sensitive_data) ? j.sensitive_data.map(String).filter((c: string) => SENSITIVE.has(c)) : [];
+      const modelSensitive: string[] = Array.isArray(j.sensitive_data) ? [...new Set<string>(j.sensitive_data.map(String))].filter((c) => SENSITIVE.has(c)) : [];
       const extra = modelSensitive.filter((c) => !special.includes(c));
       if (extra.length) {
         const c = checks.find((x) => x.id === 'special_category_data')!;
@@ -97,21 +97,26 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
 
     const [guardOut, verOut] = await Promise.all([
       timed(trace, 'safety', models.safety, () =>
-        llm.guard(models.safety, [{ role: 'user', content: message }, { role: 'assistant', content: reply }])).catch((x) => `error: ${x}`),
+        llm.guard(models.safety, [{ role: 'user', content: message }, { role: 'assistant', content: reply }])).then((out) => ({ out }), (x) => ({ err: String(x) })),
       // The verifier occasionally queues for 30 s+. Past the deadline the draft
       // is held (the client already gets the safe acknowledgement), so a slow
       // model never delays the first reply.
       timed(trace, 'verify', models.verifier, () => withTimeout(
         llm.chat(models.verifier, verifierMessages(ws, e, reply, grounding), { maxTokens: 1500, json: true, reasoningEffort: 'low' }),
-        VERIFIER_TIMEOUT_MS)).catch((x) => `error: ${x}`),
+        VERIFIER_TIMEOUT_MS)).then((out) => ({ out }), (x) => ({ err: String(x) })),
     ]);
 
-    // Llama Guard
-    const g = String(guardOut).trim().toLowerCase();
-    if (g.startsWith('error')) {
-      checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard', status: 'review', detail: 'Safety model unavailable; held for a human.' });
-    } else if (g.includes('unsafe')) {
-      const cats = (String(guardOut).match(/S\d{1,2}/g) || []);
+    // Llama Guard. Only an explicit "safe" verdict passes; an error, an empty
+    // or an unrecognised answer is held for a human (fail closed).
+    const guardText = 'out' in guardOut ? String(guardOut.out ?? '').trim() : '';
+    const g = guardText.toLowerCase();
+    const gj = g.startsWith('{') ? parseJson<any>(guardText) : null;
+    const gSafe = gj && typeof gj.safe === 'boolean' ? gj.safe : g === 'safe' || /^safe\b/.test(g) ? true : g.includes('unsafe') ? false : null;
+    if ('err' in guardOut || gSafe === null) {
+      checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard', status: 'review',
+        detail: 'err' in guardOut ? 'Safety model unavailable; held for a human.' : 'Safety model gave no recognisable verdict; held for a human.' });
+    } else if (!gSafe) {
+      const cats = gj && Array.isArray(gj.categories) ? gj.categories.map(String).filter((c: string) => /^S\d{1,2}$/.test(c)) : (guardText.match(/S\d{1,2}/g) || []);
       const blocking = cats.filter((c) => !REVIEW_CATEGORIES.has(c));
       checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard',
         status: blocking.length ? 'block' : 'review',
@@ -120,9 +125,12 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
       checks.push({ id: 'safety_model', label: 'Llama Guard 3 safety classification', source: 'llama-guard', status: 'pass', detail: 'Safe.' });
     }
 
-    // Verifier
-    const v = parseJson<any>(String(verOut));
-    if (!v) {
+    // Verifier. A failed call is never parsed (an HTTP error body can itself be
+    // JSON), and a reply missing the expected fields counts as malformed.
+    const v = 'out' in verOut ? parseJson<any>(String(verOut.out ?? '')) : null;
+    const wellFormed = !!v && Array.isArray(v.unsupported_claims) && typeof v.gives_specific_advice === 'boolean'
+      && typeof v.promises_outcome === 'boolean' && typeof v.repeats_sensitive === 'boolean';
+    if (!wellFormed) {
       checks.push({ id: 'verifier', label: 'Grounding verifier', source: 'verifier', status: 'review', detail: 'Verifier unavailable or malformed; held for a human.' });
     } else {
       const claims: string[] = Array.isArray(v.unsupported_claims) ? v.unsupported_claims.map(String).filter(Boolean) : [];

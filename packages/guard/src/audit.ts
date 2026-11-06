@@ -36,9 +36,15 @@ export async function appendRecord(prev: AuditRecord | null, r: Omit<AuditRecord
 
 export async function verifyChain(records: AuditRecord[]): Promise<{ ok: boolean; brokenAt?: number }> {
   let prev = GENESIS;
-  for (const r of records) {
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i];
+    // Records can come from untrusted storage (the playground sends them from
+    // localStorage): a malformed one is a broken chain, not an exception.
+    if (!r || typeof r !== 'object') return { ok: false, brokenAt: i + 1 };
     const { hash, ...rest } = r;
-    if (r.prevHash !== prev || (await sha256(canonical(rest))) !== hash) return { ok: false, brokenAt: r.seq };
+    let computed: string;
+    try { computed = await sha256(canonical(rest)); } catch { return { ok: false, brokenAt: typeof r.seq === 'number' ? r.seq : i + 1 }; }
+    if (r.prevHash !== prev || computed !== hash) return { ok: false, brokenAt: r.seq };
     prev = hash;
   }
   return { ok: true };

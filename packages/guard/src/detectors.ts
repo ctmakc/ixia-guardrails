@@ -73,12 +73,16 @@ export function foreignContacts(reply: string, allowedText: string): string[] {
   const allowed = (allowedText || '').toLowerCase();
   // Phone numbers in the allowed text, digits only, one per entry.
   const allowedDigits = [...allowed.matchAll(/\+?\d[\d\s().-]{7,}\d/g)].map((m) => m[0].replace(/\D/g, ''));
+  // E-mails and URLs must match a published one exactly: a substring test
+  // would let "e@firm.example" pass because "office@firm.example" is allowed.
+  const EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+  const URL_RE = /https?:\/\/[^\s)]+/g;
+  const normUrl = (u: string) => u.replace(/[.,;]+$/, '').replace(/\/+$/, '').toLowerCase();
+  const allowedEmails = new Set([...allowed.matchAll(EMAIL)].map((m) => m[0].replace(/\.+$/, '')));
+  const allowedUrls = new Set([...allowed.matchAll(URL_RE)].map((m) => normUrl(m[0])));
   const found: string[] = [];
-  for (const m of (reply || '').matchAll(/[\w.+-]+@[\w-]+\.[\w.-]+/g)) if (!allowed.includes(m[0].toLowerCase())) found.push(m[0]);
-  for (const m of (reply || '').matchAll(/https?:\/\/[^\s)]+/g)) {
-    const u = m[0].replace(/[.,;]+$/, '').toLowerCase();
-    if (!allowed.includes(u)) found.push(m[0]);
-  }
+  for (const m of (reply || '').matchAll(EMAIL)) if (!allowedEmails.has(m[0].replace(/\.+$/, '').toLowerCase())) found.push(m[0]);
+  for (const m of (reply || '').matchAll(URL_RE)) if (!allowedUrls.has(normUrl(m[0]))) found.push(m[0]);
   for (const m of (reply || '').matchAll(/\+?\d[\d\s().-]{7,}\d/g)) {
     const digits = m[0].replace(/\D/g, '');
     if (digits.length >= 8 && !allowedDigits.includes(digits)) found.push(m[0].trim());

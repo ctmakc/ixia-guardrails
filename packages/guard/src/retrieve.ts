@@ -21,6 +21,11 @@ export async function retrieve(llm: ModelClient, model: string, query: string, k
     const missing = kb.filter((s) => !cache.has(key(model, s)));
     const texts = [query, ...missing.map((s) => `${s.title}. ${s.text}`)];
     const vecs = await llm.embed(model, texts);
+    // A short or malformed batch must not reach the cache: an undefined entry
+    // there would make every later call throw and stay lexical until restart.
+    if (!Array.isArray(vecs) || vecs.length < texts.length || !vecs.every((v) => Array.isArray(v) && v.length > 0)) {
+      throw new Error('embedding batch incomplete');
+    }
     missing.forEach((s, i) => cache.set(key(model, s), vecs[i + 1]));
     const q = vecs[0];
     const hits = kb.map((s) => ({ snippet: s, score: cosine(q, cache.get(key(model, s))!) }))
