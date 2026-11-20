@@ -1,5 +1,5 @@
 import { appendRecord, verifyChain, type AuditRecord } from '../../../packages/guard/src/index';
-import { json, type Env } from '../_lib/util';
+import { json, validPrev, type Env } from '../_lib/util';
 
 // POST {op:"append", prev, entry} → next record (reviewer actions in the demo queue)
 // POST {op:"verify", records}     → {ok, brokenAt}
@@ -14,7 +14,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request }) => {
     const e = b.entry || {};
     const allowed = ['approved', 'edited_and_sent', 'rejected'];
     if (!allowed.includes(e.action)) return json({ error: 'bad_action' }, 400);
-    const rec = await appendRecord(b.prev?.hash ? b.prev : null, {
+    const rec = await appendRecord(validPrev(b.prev), {
       at: new Date().toISOString(),
       leadRef: String(e.leadRef || '').slice(0, 16),
       decision: String(e.decision || '').slice(0, 20),

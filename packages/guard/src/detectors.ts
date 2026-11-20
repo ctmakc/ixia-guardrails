@@ -52,10 +52,23 @@ export function numbersIn(text: string): string[] {
   const out = new Set<string>();
   const re = /(€|eur|euro|\$|usd|£|cad|гривень|грн)\s?\d[\d.,]*|\d[\d.,]*\s?(€|eur|euro|euros|\$|usd|£|%|percent|procent|prozent|pour ?cent|por ?ciento|грн|гривень)/gi;
   for (const m of (text || '').matchAll(re)) {
-    const digits = m[0].replace(/[^\d]/g, '').replace(/^0+/, '');
-    if (digits) out.add(digits);
+    const n = canonNumber(m[0]);
+    if (n) out.add(n);
   }
   return [...out];
+}
+
+// One spelling per amount, whatever the locale: "1,500", "1.500" and
+// "1.500,00" are all "1500"; "2.5" and "2,5" are "2.5". Dropping every
+// separator (the old rule) made "2.5%" equal to "25%" and "€15.00" equal to
+// "€1,500", so an invented figure passed as grounded. A last separator followed
+// by one or two digits is a decimal mark; zero cents are dropped.
+function canonNumber(raw: string): string {
+  const s = raw.replace(/[^\d.,]/g, '').replace(/^[.,]+|[.,]+$/g, '');
+  const m = s.match(/^(.*?)[.,](\d{1,2})$/);
+  const int = (m ? m[1] : s).replace(/\D/g, '').replace(/^0+/, '');
+  const dec = m ? m[2].replace(/0+$/, '') : '';
+  return dec ? `${int || '0'}.${dec}` : int;
 }
 
 export function ungroundedNumbers(reply: string, groundText: string): string[] {
@@ -64,7 +77,7 @@ export function ungroundedNumbers(reply: string, groundText: string): string[] {
 }
 
 function numbersInLoose(text: string): string[] {
-  return [...(text || '').matchAll(/\d[\d.,]*/g)].map((m) => m[0].replace(/[^\d]/g, '').replace(/^0+/, '')).filter(Boolean);
+  return [...(text || '').matchAll(/\d[\d.,]*/g)].map((m) => canonNumber(m[0])).filter(Boolean);
 }
 
 // Contact data in the reply that the firm did not publish (e-mails, phone
@@ -76,8 +89,10 @@ export function foreignContacts(reply: string, allowedText: string): string[] {
   // E-mails and URLs must match a published one exactly: a substring test
   // would let "e@firm.example" pass because "office@firm.example" is allowed.
   const EMAIL = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
-  const URL_RE = /https?:\/\/[^\s)]+/g;
-  const normUrl = (u: string) => u.replace(/[.,;]+$/, '').replace(/\/+$/, '').toLowerCase();
+  // Links count with any scheme case ("HTTPS://") and without a scheme when
+  // they start with www.; scheme and www. are ignored when comparing.
+  const URL_RE = /(?:https?:\/\/|www\.)[^\s)]+/gi;
+  const normUrl = (u: string) => u.replace(/[.,;]+$/, '').replace(/\/+$/, '').toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '');
   const allowedEmails = new Set([...allowed.matchAll(EMAIL)].map((m) => m[0].replace(/\.+$/, '')));
   const allowedUrls = new Set([...allowed.matchAll(URL_RE)].map((m) => normUrl(m[0])));
   const found: string[] = [];

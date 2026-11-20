@@ -33,12 +33,17 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
   models: GuardModels = DEFAULT_MODELS): Promise<TriageResult> {
   const trace: TraceStep[] = [];
   const checks: Check[] = [];
-  const message = (enquiry.message || '').slice(0, 4000);
-  const e: Enquiry = { ...enquiry, message };
+  // Enquiries arrive as JSON from public forms and APIs: a number or an array
+  // where a string is expected must not throw (the IXIA intake falls back to
+  // the ungated single draft when the gate throws).
+  const message = text(enquiry.message).slice(0, 4000);
+  const name = text(enquiry.name).slice(0, 200);
+  const e: Enquiry = { ...enquiry, name, message };
 
   // 1. Inbound checks (deterministic)
   const heuristicLang = detectLang(message);
-  const injected = promptInjection(message);
+  // The name field reaches both model prompts too, so it is checked as well.
+  const injected = promptInjection(`${name}\n${message}`);
   checks.push({ id: 'prompt_injection', label: 'Instructions aimed at the AI in the enquiry', source: 'rule',
     status: injected ? 'review' : 'pass', detail: injected ? 'Enquiry contains text that tries to steer the model.' : 'None found.' });
   const special = specialCategories(message);
@@ -170,7 +175,11 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
   const decision: Decision = checks.some((c) => c.status === 'block') ? 'block'
     : checks.some((c) => c.status === 'review') ? 'hold_for_review' : 'auto_send';
 
-  const first = (e.name || '').trim().split(/\s+/)[0];
+  // The acknowledgement goes out automatically to whatever address was typed
+  // into a public form, so the greeting uses the first name only when it reads
+  // as a name; a link or other text in the name field gets the anonymous one.
+  const first0 = name.trim().split(/\s+/)[0];
+  const first = first0.length <= 40 && NAME_RE.test(first0) ? first0 : '';
   const disclosure = fill(AI_DISCLOSURE[lang], { firm: ws.name });
   const outgoing = decision === 'auto_send'
     ? `${reply.trim()}${reply.includes(ws.name) ? '' : `\n\n— ${ws.name}`}\n\n${disclosure}`
@@ -185,6 +194,9 @@ export async function triage(llm: ModelClient, ws: Workspace, enquiry: Enquiry,
     trace, models: { ...models }, promptVersion: PROMPT_VERSION, createdAt: new Date().toISOString(),
   };
 }
+
+const text = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v));
+const NAME_RE = /^\p{L}[\p{L}\p{M}]*(?:['’-]\p{L}[\p{L}\p{M}]*)*\.?$/u;
 
 function systemFacts(ws: Workspace) {
   const facts = [{ id: 'sla', title: 'Response promise', text: `A member of the ${ws.name} team replies personally within ${ws.slaMinutes} minutes during business hours.` }];

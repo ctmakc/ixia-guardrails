@@ -43,8 +43,10 @@ export async function verifyChain(records: AuditRecord[]): Promise<{ ok: boolean
     if (!r || typeof r !== 'object') return { ok: false, brokenAt: i + 1 };
     const { hash, ...rest } = r;
     let computed: string;
-    try { computed = await sha256(canonical(rest)); } catch { return { ok: false, brokenAt: typeof r.seq === 'number' ? r.seq : i + 1 }; }
-    if (r.prevHash !== prev || computed !== hash) return { ok: false, brokenAt: r.seq };
+    try { computed = await sha256(canonical(rest)); } catch { return { ok: false, brokenAt: Number.isInteger(r.seq) ? r.seq : i + 1 }; }
+    // brokenAt is the position in the chain: a stored seq can be anything
+    // (the playground renders it), so it is reported only when it is a number.
+    if (r.prevHash !== prev || computed !== hash) return { ok: false, brokenAt: Number.isInteger(r.seq) ? r.seq : i + 1 };
     prev = hash;
   }
   return { ok: true };

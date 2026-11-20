@@ -5,6 +5,14 @@ export interface Env {
   PER_IP_PER_DAY?: string;
 }
 
+// The demo keeps the audit chain in the visitor's localStorage and sends the
+// last record back as `prev`. A forged or damaged one (seq "5" → next seq "51",
+// seq 0, a non-hash) must not seed the next record: start a new chain instead.
+export function validPrev(p: any): any {
+  return p && typeof p === 'object' && Number.isInteger(p.seq) && p.seq > 0
+    && typeof p.hash === 'string' && /^[0-9a-f]{64}$/.test(p.hash) ? p : null;
+}
+
 export const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
 
